@@ -1,0 +1,28 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/tmp/
+
+# Test/coverage
+*.test
+*.out
+coverage.*
+
+# Env / secrets — keep .env.example, ignore real .env
+.env
+.env.local
+*.local
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Go workspace
+go.work
+go.work.sum
