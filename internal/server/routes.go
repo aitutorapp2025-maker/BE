@@ -54,6 +54,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	faqCrud := handler.NewLandingCrudHandler[model.LandingFaq, *model.LandingFaq](faqRepo, "faq")
 	landingTextHandler := handler.NewLandingTextHandler(landingTextRepo)
 	contactHandler := handler.NewContactHandler(contactRepo, settingRepo, emailPublisher, smsPublisher, d.Log)
+	handshakeHandler := handler.NewHandshakeHandler(sessStore)
 
 	// ── Public routes ────────────────────────────────────────────────────
 	app.Get("/health", healthHandler.Check)
@@ -63,11 +64,14 @@ func registerRoutes(app *fiber.App, d Deps) {
 		return c.JSON(fiber.Map{"success": true, "message": "pong"})
 	})
 
-	// Public landing-page content (consumed by the marketing site).
-	v1.Get("/landing", landingHandler.Public)
+	// Anonymous E2E handshake so public endpoints can be encrypted too.
+	v1.Post("/handshake", handshakeHandler.Handshake)
 
-	// Public "Get in touch" submission.
-	v1.Post("/contact", contactHandler.Submit)
+	// Public endpoints — encrypted for clients that completed the anon handshake
+	// (the Encrypt middleware reads the X-Session header).
+	enc := middleware.Encrypt(sessStore)
+	v1.Get("/landing", enc, landingHandler.Public)
+	v1.Post("/contact", enc, contactHandler.Submit)
 
 	// Public client-side error reporting (emails an alert to the admin).
 	errorReportHandler := handler.NewErrorReportHandler(d.Alerter)

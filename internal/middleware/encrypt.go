@@ -15,13 +15,16 @@ import (
 // the encrypted body). Error responses are left to the app ErrorHandler.
 func Encrypt(store *session.Store) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		sid, _ := c.Locals("sid").(string)
-		if sid == "" {
-			return c.Next()
+		// Resolve the AES key from either the admin session (sid set by
+		// SignedAdmin) or an anonymous session (X-Session header).
+		var key []byte
+		if sid, _ := c.Locals("sid").(string); sid != "" {
+			key, _ = store.EncKey(c.Context(), sid)
+		} else if anon := c.Get("X-Session"); anon != "" {
+			key, _ = store.AnonEncKey(c.Context(), anon)
 		}
-		key, err := store.EncKey(c.Context(), sid)
-		if err != nil || len(key) == 0 {
-			return c.Next() // session has no E2E key — pass through in the clear
+		if len(key) == 0 {
+			return c.Next() // no key — pass through in the clear
 		}
 
 		// Decrypt the request body.

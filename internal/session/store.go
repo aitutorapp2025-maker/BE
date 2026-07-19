@@ -124,6 +124,32 @@ func (s *Store) AdminID(ctx context.Context, sid string) (uint, error) {
 	return uint(v), err
 }
 
+// anonTTL is how long an anonymous (unauthenticated) E2E session key lives.
+const anonTTL = 6 * time.Hour
+
+func anonKeyKey(id string) string { return "anon:enckey:" + id }
+
+// NewAnonID returns a fresh random anonymous session id.
+func (s *Store) NewAnonID() string { return randHex(16) }
+
+// SetAnonEncKey stores an anonymous session's AES key (for public endpoints).
+func (s *Store) SetAnonEncKey(ctx context.Context, id string, key []byte) error {
+	return s.rdb.Set(ctx, anonKeyKey(id),
+		base64.StdEncoding.EncodeToString(key), anonTTL).Err()
+}
+
+// AnonEncKey returns an anonymous session's AES key (nil if none/expired).
+func (s *Store) AnonEncKey(ctx context.Context, id string) ([]byte, error) {
+	v, err := s.rdb.Get(ctx, anonKeyKey(id)).Result()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return base64.StdEncoding.DecodeString(v)
+}
+
 // SetEncKey stores the end-to-end AES key for a session.
 func (s *Store) SetEncKey(ctx context.Context, sid string, key []byte) error {
 	return s.rdb.Set(ctx, enckeyKey(sid),

@@ -43,7 +43,10 @@ func New(d Deps) *fiber.App {
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: "*",
 		AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization, " +
+			"X-Session, X-Nonce, X-Timestamp, X-Signature, X-Encrypted",
+		// Let the browser read our custom response header (E2E flag).
+		ExposeHeaders: "X-Encrypted",
 	}))
 
 	registerRoutes(app, d)
