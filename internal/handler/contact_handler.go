@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/captcha"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/email"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
@@ -15,20 +16,22 @@ import (
 // ContactHandler handles landing-page "Get in touch" submissions.
 type ContactHandler struct {
 	contacts *repository.ContactRepository
+	settings *repository.SettingRepository
 	mailer   *email.Publisher
 	smser    *sms.Publisher
 	log      *logger.Logger
 }
 
 // NewContactHandler builds a ContactHandler.
-func NewContactHandler(contacts *repository.ContactRepository, mailer *email.Publisher, smser *sms.Publisher, log *logger.Logger) *ContactHandler {
-	return &ContactHandler{contacts: contacts, mailer: mailer, smser: smser, log: log}
+func NewContactHandler(contacts *repository.ContactRepository, settings *repository.SettingRepository, mailer *email.Publisher, smser *sms.Publisher, log *logger.Logger) *ContactHandler {
+	return &ContactHandler{contacts: contacts, settings: settings, mailer: mailer, smser: smser, log: log}
 }
 
 type contactRequest struct {
-	Name    string `json:"name"`
-	Email   string `json:"email"`
-	Message string `json:"message"`
+	Name         string `json:"name"`
+	Email        string `json:"email"`
+	Message      string `json:"message"`
+	CaptchaToken string `json:"captcha_token"`
 }
 
 // Submit saves a public contact submission and emails the visitor a receipt.
@@ -43,6 +46,14 @@ func (h *ContactHandler) Submit(c *fiber.Ctx) error {
 	req.Message = strings.TrimSpace(req.Message)
 	if req.Name == "" || req.Message == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "name and message are required")
+	}
+
+	// CAPTCHA verification (bot protection) when enabled.
+	if s, err := h.settings.Get(); err == nil && s.CaptchaEnabled && s.CaptchaSecret != "" {
+		if err := captcha.Verify(c.Context(), s.CaptchaProvider, s.CaptchaSecret, req.CaptchaToken, c.IP()); err != nil {
+			h.log.Warnf("contact: captcha failed from %s: %v", c.IP(), err)
+			return fiber.NewError(fiber.StatusBadRequest, "Please complete the verification to prove you're human.")
+		}
 	}
 
 	msg := &model.ContactMessage{

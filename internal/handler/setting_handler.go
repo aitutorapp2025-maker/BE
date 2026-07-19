@@ -53,6 +53,12 @@ type settingRequest struct {
 	SmsExpertSender   string `json:"smsexpert_sender"`
 	SmsExpertRoute    string `json:"smsexpert_route"`
 	SmsExpertType     string `json:"smsexpert_type"`
+
+	// CAPTCHA. Secret is write-only.
+	CaptchaEnabled  bool   `json:"captcha_enabled"`
+	CaptchaProvider string `json:"captcha_provider"`
+	CaptchaSiteKey  string `json:"captcha_site_key"`
+	CaptchaSecret   string `json:"captcha_secret"`
 }
 
 // Get returns the app settings. GET /api/v1/admin/settings
@@ -64,6 +70,7 @@ func (h *SettingHandler) Get(c *fiber.Ctx) error {
 	s.SmtpPasswordSet = s.SmtpPassword != ""
 	s.NexmoSecretSet = s.NexmoAPISecret != ""
 	s.SmsExpertPasswordSet = s.SmsExpertPassword != ""
+	s.CaptchaSecretSet = s.CaptchaSecret != ""
 	return c.JSON(fiber.Map{"success": true, "settings": s})
 }
 
@@ -125,12 +132,23 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 		s.SmsExpertPassword = req.SmsExpertPassword
 	}
 
+	// CAPTCHA.
+	s.CaptchaEnabled = req.CaptchaEnabled
+	if p := strings.TrimSpace(req.CaptchaProvider); p != "" {
+		s.CaptchaProvider = p
+	}
+	s.CaptchaSiteKey = strings.TrimSpace(req.CaptchaSiteKey)
+	if strings.TrimSpace(req.CaptchaSecret) != "" {
+		s.CaptchaSecret = req.CaptchaSecret
+	}
+
 	if err := h.settings.Save(s); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to save settings")
 	}
 	s.SmtpPasswordSet = s.SmtpPassword != ""
 	s.NexmoSecretSet = s.NexmoAPISecret != ""
 	s.SmsExpertPasswordSet = s.SmsExpertPassword != ""
+	s.CaptchaSecretSet = s.CaptchaSecret != ""
 	return c.JSON(fiber.Map{"success": true, "settings": s})
 }
 

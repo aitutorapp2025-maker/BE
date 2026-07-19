@@ -41,8 +41,10 @@ func (s SMTPConfig) Enabled() bool { return s.Host != "" }
 
 // JWTConfig holds JSON Web Token signing settings.
 type JWTConfig struct {
-	Secret string
-	TTL    time.Duration
+	Secret     string
+	TTL        time.Duration // legacy/simple access-token lifetime
+	AccessTTL  time.Duration // short-lived signed access token
+	RefreshTTL time.Duration // rotating refresh token lifetime
 }
 
 // DBConfig holds PostgreSQL connection settings.
@@ -111,8 +113,10 @@ func Load() Config {
 			URL: env("RABBITMQ_URL", "amqp://guest:guest@127.0.0.1:5672/"),
 		},
 		JWT: JWTConfig{
-			Secret: env("JWT_SECRET", "dev-insecure-change-me-in-production"),
-			TTL:    time.Duration(envInt("JWT_TTL_HOURS", 24)) * time.Hour,
+			Secret:     env("JWT_SECRET", "dev-insecure-change-me-in-production"),
+			TTL:        time.Duration(envInt("JWT_TTL_HOURS", 24)) * time.Hour,
+			AccessTTL:  time.Duration(envInt("JWT_ACCESS_MINUTES", 15)) * time.Minute,
+			RefreshTTL: time.Duration(envInt("JWT_REFRESH_HOURS", 168)) * time.Hour,
 		},
 		SMTP: SMTPConfig{
 			Host:     env("SMTP_HOST", ""),

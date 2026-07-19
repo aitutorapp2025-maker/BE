@@ -7,6 +7,7 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/session"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/sms"
 	"github.com/gofiber/fiber/v2"
 )
@@ -33,7 +34,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 
 	emailPublisher := email.NewPublisher(d.MQ, func() bool { return d.SMTP().Enabled() })
 	smsPublisher := sms.NewPublisher(d.MQ, func() bool { return d.SMS().Usable() })
-	authService := service.NewAuthService(adminRepo, d.Cfg)
+	sessStore := session.New(d.Redis, d.Cfg.JWT.RefreshTTL)
+	authService := service.NewAuthService(adminRepo, sessStore, d.Cfg)
 
 	healthHandler := handler.NewHealthHandler(d.DB, d.Redis, d.MQ)
 	adminAuthHandler := handler.NewAdminAuthHandler(authService, adminRepo)
@@ -44,14 +46,14 @@ func registerRoutes(app *fiber.App, d Deps) {
 	settingHandler := handler.NewSettingHandler(settingRepo, emailPublisher, smsPublisher)
 
 	landingHandler := handler.NewLandingHandler(
-		navRepo, statRepo, featureRepo, testimonialRepo, faqRepo, landingTextRepo)
+		navRepo, statRepo, featureRepo, testimonialRepo, faqRepo, landingTextRepo, settingRepo)
 	navCrud := handler.NewLandingCrudHandler[model.LandingNavItem, *model.LandingNavItem](navRepo, "nav item")
 	statCrud := handler.NewLandingCrudHandler[model.LandingStat, *model.LandingStat](statRepo, "stat")
 	featureCrud := handler.NewLandingCrudHandler[model.LandingFeature, *model.LandingFeature](featureRepo, "feature")
 	testimonialCrud := handler.NewLandingCrudHandler[model.LandingTestimonial, *model.LandingTestimonial](testimonialRepo, "testimonial")
 	faqCrud := handler.NewLandingCrudHandler[model.LandingFaq, *model.LandingFaq](faqRepo, "faq")
 	landingTextHandler := handler.NewLandingTextHandler(landingTextRepo)
-	contactHandler := handler.NewContactHandler(contactRepo, emailPublisher, smsPublisher, d.Log)
+	contactHandler := handler.NewContactHandler(contactRepo, settingRepo, emailPublisher, smsPublisher, d.Log)
 
 	// ── Public routes ────────────────────────────────────────────────────
 	app.Get("/health", healthHandler.Check)
@@ -67,6 +69,10 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Public "Get in touch" submission.
 	v1.Post("/contact", contactHandler.Submit)
 
+	// Public client-side error reporting (emails an alert to the admin).
+	errorReportHandler := handler.NewErrorReportHandler(d.Alerter)
+	v1.Post("/errors", errorReportHandler.Report)
+
 	// Dev-only: simulate a server error to test error alerting.
 	if !d.Cfg.IsProduction() {
 		v1.Get("/debug/boom", func(c *fiber.Ctx) error {
@@ -77,10 +83,19 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// ── Admin ────────────────────────────────────────────────────────────
 	admin := v1.Group("/admin")
 	admin.Post("/login", adminAuthHandler.Login)
+	// Refresh is authenticated by the (single-use) refresh token itself, so it
+	// is not signature-protected (the access token may be expired here).
+	admin.Post("/refresh", adminAuthHandler.Refresh)
 
-	// Protected admin routes (require a valid Bearer token).
-	adminProtected := admin.Group("", middleware.AdminAuth(d.Cfg))
+	// Protected admin routes require a signed request: valid JWT + timestamp +
+	// HMAC signature + a one-time nonce (see middleware.SignedAdmin). The Encrypt
+	// middleware then transparently decrypts requests / encrypts responses for
+	// sessions that completed the E2E key exchange.
+	adminProtected := admin.Group("",
+		middleware.SignedAdmin(d.Cfg, sessStore),
+		middleware.Encrypt(sessStore))
 	adminProtected.Get("/me", adminAuthHandler.Me)
+	adminProtected.Post("/logout", adminAuthHandler.Logout)
 	adminProtected.Post("/change-password", adminAuthHandler.ChangePassword)
 
 	// Students CRUD.

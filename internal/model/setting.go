@@ -46,9 +46,17 @@ type Setting struct {
 	SmsExpertRoute    string `gorm:"size:20" json:"smsexpert_route"`    // route
 	SmsExpertType     string `gorm:"size:20" json:"smsexpert_type"`     // type
 
+	// CAPTCHA (bot protection on the public contact form). Secret is never
+	// serialized to the client; site key is public.
+	CaptchaEnabled  bool   `gorm:"not null;default:false" json:"captcha_enabled"`
+	CaptchaProvider string `gorm:"size:20;not null;default:recaptcha" json:"captcha_provider"` // recaptcha | hcaptcha | turnstile
+	CaptchaSiteKey  string `gorm:"size:190" json:"captcha_site_key"`
+	CaptchaSecret   string `gorm:"size:190" json:"-"`
+
 	// Computed (not stored): whether each secret is on file.
 	NexmoSecretSet       bool `gorm:"-" json:"nexmo_secret_set"`
 	SmsExpertPasswordSet bool `gorm:"-" json:"smsexpert_password_set"`
+	CaptchaSecretSet     bool `gorm:"-" json:"captcha_secret_set"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
