@@ -168,6 +168,41 @@ func (s *Store) EncKey(ctx context.Context, sid string) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(v)
 }
 
+// ── Phone OTP (student mobile login) ────────────────────────────────────────
+
+func otpKey(phone string) string      { return "otp:code:" + phone }
+func otpThrottleKey(phone string) string { return "otp:throttle:" + phone }
+
+// SetOTP stores a one-time code for a phone number with the given TTL,
+// overwriting any previous code.
+func (s *Store) SetOTP(ctx context.Context, phone, code string, ttl time.Duration) error {
+	return s.rdb.Set(ctx, otpKey(phone), code, ttl).Err()
+}
+
+// OTPThrottle marks that an OTP was just sent to phone and returns true if the
+// send is allowed (no code sent within the throttle window), false if the
+// caller should wait before requesting another code.
+func (s *Store) OTPThrottle(ctx context.Context, phone string, window time.Duration) (bool, error) {
+	return s.rdb.SetNX(ctx, otpThrottleKey(phone), "1", window).Result()
+}
+
+// ConsumeOTP checks the code for a phone number and, on a match, deletes it so
+// it can't be reused. Returns true only on a correct, unexpired code.
+func (s *Store) ConsumeOTP(ctx context.Context, phone, code string) (bool, error) {
+	stored, err := s.rdb.Get(ctx, otpKey(phone)).Result()
+	if err == redis.Nil {
+		return false, nil // no code / expired
+	}
+	if err != nil {
+		return false, err
+	}
+	if stored != code {
+		return false, nil
+	}
+	s.rdb.Del(ctx, otpKey(phone))
+	return true, nil
+}
+
 // UseNonce records a request nonce and returns true if it is fresh (unused).
 // A repeated nonce within its TTL returns false (replay).
 func (s *Store) UseNonce(ctx context.Context, sid, nonce string, ttl time.Duration) (bool, error) {

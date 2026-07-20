@@ -45,6 +45,7 @@ type JWTConfig struct {
 	TTL        time.Duration // legacy/simple access-token lifetime
 	AccessTTL  time.Duration // short-lived signed access token
 	RefreshTTL time.Duration // rotating refresh token lifetime
+	StudentTTL time.Duration // student (mobile) access-token lifetime
 }
 
 // DBConfig holds PostgreSQL connection settings.
@@ -117,6 +118,8 @@ func Load() Config {
 			TTL:        time.Duration(envInt("JWT_TTL_HOURS", 24)) * time.Hour,
 			AccessTTL:  time.Duration(envInt("JWT_ACCESS_MINUTES", 15)) * time.Minute,
 			RefreshTTL: time.Duration(envInt("JWT_REFRESH_HOURS", 168)) * time.Hour,
+			// Students log in on mobile via OTP; keep them signed in for a while.
+			StudentTTL: time.Duration(envInt("JWT_STUDENT_HOURS", 720)) * time.Hour,
 		},
 		SMTP: SMTPConfig{
 			Host:     env("SMTP_HOST", ""),

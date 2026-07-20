@@ -33,6 +33,7 @@ func Migrate(db *gorm.DB) error {
 		&model.LandingFaq{},
 		&model.LandingText{},
 		&model.ContactMessage{},
+		&model.DeviceToken{},
 	)
 }
 

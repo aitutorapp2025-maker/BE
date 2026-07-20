@@ -37,7 +37,7 @@ type SmsExpertConfig struct {
 	Type     string // type (default "text")
 }
 
-const smsExpertDefaultURL = "https://secure.itagg.com/smsg/sms.mes"
+const smsExpertDefaultURL = "https://dashboard.smsexpert.co.uk/api/smsg/sms.mes"
 
 // Config is the resolved SMS configuration.
 type Config struct {
@@ -163,7 +163,34 @@ func (s *Sender) sendSmsExpert(c SmsExpertConfig, to, text string) error {
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("smsexpert: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	return nil
+	// SMS Expert returns HTTP 200 even for errors; the real status is in the
+	// body (a header line + a data line: "code|text|reference"). Code "0" means
+	// the message was submitted — anything else is a failure.
+	return parseSmsExpertResult(string(body))
+}
+
+// parseSmsExpertResult reads the SMS Expert response body and returns nil only
+// when the gateway accepted the message (code "0"), else an error carrying the
+// gateway's code + text (e.g. 470 account migrated, 1703 invalid credentials).
+func parseSmsExpertResult(body string) error {
+	lines := strings.Split(strings.TrimSpace(body), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" || strings.HasPrefix(strings.ToLower(line), "error code") {
+			continue // skip blank lines and the header row
+		}
+		fields := strings.Split(line, "|")
+		code := strings.TrimSpace(fields[0])
+		if code == "0" {
+			return nil // submitted
+		}
+		text := ""
+		if len(fields) > 1 {
+			text = strings.TrimSpace(fields[1])
+		}
+		return fmt.Errorf("smsexpert error %s: %s", code, text)
+	}
+	return fmt.Errorf("smsexpert: unexpected response: %s", strings.TrimSpace(body))
 }
 
 // normalize cleans a phone number and adds the country code to bare local
