@@ -11,6 +11,9 @@ type Student struct {
 	StudentClass string    `gorm:"size:40;not null" json:"student_class"` // e.g. "Class 10"
 	Board        string    `gorm:"size:40;not null" json:"board"`         // State Board / CBSE / ICSE
 	Medium       string    `gorm:"size:20;not null" json:"medium"`        // English / Tamil
+	// TeachingLanguage is the admin-managed language of instruction (Tamil /
+	// English / Hindi / Telugu ...).
+	TeachingLanguage string `gorm:"size:40" json:"teaching_language"`
 	Plan         string    `gorm:"size:20;not null;default:trial" json:"plan"`       // trial | monthly | yearly
 	PayStatus    string    `gorm:"size:20;not null;default:trial" json:"pay_status"` // trial | paid | expired
 	JoinedAt     time.Time `json:"joined_at"`

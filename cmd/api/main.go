@@ -83,6 +83,12 @@ func main() {
 		log.Infof("seeded terms & conditions")
 	}
 
+	if n, err := database.SeedTeachingLanguages(db); err != nil {
+		log.Fatalf("seed teaching languages: %v", err)
+	} else if n > 0 {
+		log.Infof("seeded %d teaching languages", n)
+	}
+
 	// ── Redis ────────────────────────────────────────────────────────────
 	rdb, err := cache.Connect(cfg)
 	if err != nil {

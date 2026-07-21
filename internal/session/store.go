@@ -53,6 +53,7 @@ func hashToken(t string) string {
 
 func secretKey(sid string) string  { return "sess:secret:" + sid }
 func adminKey(sid string) string   { return "sess:admin:" + sid }
+func studentKey(sid string) string { return "sess:student:" + sid }
 func enckeyKey(sid string) string  { return "sess:enckey:" + sid }
 func refreshKey(tok string) string { return "refresh:" + hashToken(tok) }
 func nonceKey(sid, n string) string { return "nonce:" + sid + ":" + n }
@@ -76,6 +77,38 @@ func (s *Store) Create(ctx context.Context, adminID uint) (*Session, error) {
 		return nil, err
 	}
 	return &Session{ID: sid, SigningSecret: secret, RefreshToken: refresh}, nil
+}
+
+// CreateStudent opens a signed session for a student, valid for ttl. Unlike an
+// admin session there is no rotating refresh token — student (mobile) sessions
+// are long-lived and simply re-established by another OTP login on expiry.
+func (s *Store) CreateStudent(ctx context.Context, studentID uint, ttl time.Duration) (*Session, error) {
+	sid := randHex(16)
+	secret := randHex(32)
+
+	pipe := s.rdb.TxPipeline()
+	pipe.Set(ctx, secretKey(sid), secret, ttl)
+	pipe.Set(ctx, studentKey(sid), studentID, ttl)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return nil, err
+	}
+	return &Session{ID: sid, SigningSecret: secret}, nil
+}
+
+// StudentID returns the student id for a session.
+func (s *Store) StudentID(ctx context.Context, sid string) (uint, error) {
+	v, err := s.rdb.Get(ctx, studentKey(sid)).Uint64()
+	if err == redis.Nil {
+		return 0, ErrNoSession
+	}
+	return uint(v), err
+}
+
+// SetEncKeyTTL stores the end-to-end AES key for a session with a custom TTL
+// (used for long-lived student sessions).
+func (s *Store) SetEncKeyTTL(ctx context.Context, sid string, key []byte, ttl time.Duration) error {
+	return s.rdb.Set(ctx, enckeyKey(sid),
+		base64.StdEncoding.EncodeToString(key), ttl).Err()
 }
 
 // Secret returns the signing secret for a session, or ErrNoSession.

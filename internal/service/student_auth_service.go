@@ -11,6 +11,7 @@ import (
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/auth"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/config"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/cryptox"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/session"
@@ -62,17 +63,24 @@ func (s *StudentAuthService) RegisterDevice(ctx context.Context, token, platform
 	return s.devices.Register(token, strings.TrimSpace(platform))
 }
 
-// StudentAuthResult is returned on a successful OTP verification.
+// StudentAuthResult is returned on a successful OTP verification. It carries the
+// signed-session credentials (signing secret + E2E server public key) so the
+// mobile app can sign + encrypt subsequent requests, exactly like the admin.
 type StudentAuthResult struct {
-	Token     string
-	ExpiresAt time.Time
-	Student   model.Student
-	IsNew     bool
+	Token         string
+	SigningSecret string // per-session HMAC secret for request signing
+	ServerPub     string // X25519 server public key for E2E key exchange
+	ExpiresAt     time.Time
+	Student       model.Student
+	IsNew         bool
 }
 
-// SendOTP generates a 6-digit code, stores it (5 min), and enqueues an SMS via
-// the admin-configured provider. In non-production it also returns the code so
-// it can be tested without a live SMS gateway (never returned in production).
+// SendOTP issues a verification code for a phone number (stored 5 min).
+//
+//   - Development: uses the fixed OTPStatic code and does NOT contact the SMS
+//     gateway. The code is returned so login can be tested offline.
+//   - Production: generates a real random code and delivers it by SMS via the
+//     admin-configured provider; the code is never returned.
 func (s *StudentAuthService) SendOTP(ctx context.Context, phone string) (devCode string, err error) {
 	p := canonPhone(phone)
 	if p == "" {
@@ -87,27 +95,37 @@ func (s *StudentAuthService) SendOTP(ctx context.Context, phone string) (devCode
 		return "", ErrOTPThrottled
 	}
 
+	// Development: fixed code, no SMS sent.
+	if !s.cfg.IsProduction() {
+		code := s.cfg.OTPStatic
+		if code == "" {
+			code = "202627"
+		}
+		if err := s.sessions.SetOTP(ctx, p, code, otpTTL); err != nil {
+			return "", err
+		}
+		return code, nil
+	}
+
+	// Production: real random code delivered by SMS.
 	code := gen6()
 	if err := s.sessions.SetOTP(ctx, p, code, otpTTL); err != nil {
 		return "", err
 	}
-
 	// Short message (<=140 bytes) with the code first, so Android's SMS User
 	// Consent API can auto-detect it. Delivered through RabbitMQ → SMS worker.
 	text := fmt.Sprintf("%s is your Vaha AI verification code. Valid for 5 minutes.", code)
 	if err := s.sms.Enqueue(sms.Job{To: p, Text: text}); err != nil {
 		return "", err
 	}
-
-	if s.cfg.IsProduction() {
-		return "", nil
-	}
-	return code, nil
+	return "", nil
 }
 
 // VerifyOTP checks the code and, on success, finds or creates the student by
-// phone, stores the device token (if given), and issues a student JWT.
-func (s *StudentAuthService) VerifyOTP(ctx context.Context, phone, code, deviceToken string) (*StudentAuthResult, error) {
+// phone, stores the device token (if given), opens a signed session and issues
+// a student JWT. When clientPub (base64 X25519) is present it also performs the
+// E2E key exchange and returns the server public key.
+func (s *StudentAuthService) VerifyOTP(ctx context.Context, phone, code, deviceToken, clientPub string) (*StudentAuthResult, error) {
 	p := canonPhone(phone)
 	if p == "" {
 		return nil, ErrInvalidPhone
@@ -145,20 +163,46 @@ func (s *StudentAuthService) VerifyOTP(ctx context.Context, phone, code, deviceT
 		_ = s.devices.Map(deviceToken, "", student.ID, student.Phone)
 	}
 
-	token, exp, err := auth.GenerateStudentToken(s.cfg.JWT.Secret, s.cfg.JWT.StudentTTL, *student)
+	// Open a signed session (per-session HMAC secret) so subsequent requests are
+	// signed + replay-protected, just like the admin.
+	sess, err := s.sessions.CreateStudent(ctx, student.ID, s.cfg.JWT.StudentTTL)
 	if err != nil {
 		return nil, err
 	}
-	return &StudentAuthResult{Token: token, ExpiresAt: exp, Student: *student, IsNew: isNew}, nil
+	token, exp, err := auth.GenerateStudentToken(s.cfg.JWT.Secret, s.cfg.JWT.StudentTTL, *student, sess.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	// E2E key exchange (optional — enables encrypted payloads for this session).
+	var serverPub string
+	if strings.TrimSpace(clientPub) != "" {
+		aesKey, sPub, herr := cryptox.ServerHandshake(clientPub)
+		if herr == nil {
+			if e := s.sessions.SetEncKeyTTL(ctx, sess.ID, aesKey, s.cfg.JWT.StudentTTL); e == nil {
+				serverPub = sPub
+			}
+		}
+	}
+
+	return &StudentAuthResult{
+		Token:         token,
+		SigningSecret: sess.SigningSecret,
+		ServerPub:     serverPub,
+		ExpiresAt:     exp,
+		Student:       *student,
+		IsNew:         isNew,
+	}, nil
 }
 
 // StudentProfileInput carries the editable profile fields for a student.
 type StudentProfileInput struct {
-	Name         string
-	StudentClass string
-	Board        string
-	Medium       string
-	ParentPhone  string
+	Name             string
+	StudentClass     string
+	Board            string
+	Medium           string
+	TeachingLanguage string
+	ParentPhone      string
 }
 
 // GetStudent returns a student by id (for the signed-in student to load their
@@ -178,6 +222,7 @@ func (s *StudentAuthService) UpdateProfile(ctx context.Context, studentID uint, 
 	st.StudentClass = strings.TrimSpace(in.StudentClass)
 	st.Board = strings.TrimSpace(in.Board)
 	st.Medium = strings.TrimSpace(in.Medium)
+	st.TeachingLanguage = strings.TrimSpace(in.TeachingLanguage)
 	st.ParentPhone = strings.TrimSpace(in.ParentPhone)
 	if err := s.students.Update(st); err != nil {
 		return nil, err

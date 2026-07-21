@@ -23,15 +23,16 @@ func NewStudentHandler(students *repository.StudentRepository) *StudentHandler {
 
 // studentRequest is the JSON body for create/update.
 type studentRequest struct {
-	Name         string     `json:"name"`
-	Phone        string     `json:"phone"`
-	ParentPhone  string     `json:"parent_phone"`
-	StudentClass string     `json:"student_class"`
-	Board        string     `json:"board"`
-	Medium       string     `json:"medium"`
-	Plan         string     `json:"plan"`
-	PayStatus    string     `json:"pay_status"`
-	JoinedAt     *time.Time `json:"joined_at"`
+	Name             string     `json:"name"`
+	Phone            string     `json:"phone"`
+	ParentPhone      string     `json:"parent_phone"`
+	StudentClass     string     `json:"student_class"`
+	Board            string     `json:"board"`
+	Medium           string     `json:"medium"`
+	TeachingLanguage string     `json:"teaching_language"`
+	Plan             string     `json:"plan"`
+	PayStatus        string     `json:"pay_status"`
+	JoinedAt         *time.Time `json:"joined_at"`
 }
 
 var (
@@ -73,15 +74,16 @@ func (h *StudentHandler) Create(c *fiber.Ctx) error {
 		joined = *req.JoinedAt
 	}
 	s := &model.Student{
-		Name:         req.Name,
-		Phone:        req.Phone,
-		ParentPhone:  req.ParentPhone,
-		StudentClass: req.StudentClass,
-		Board:        req.Board,
-		Medium:       req.Medium,
-		Plan:         req.Plan,
-		PayStatus:    req.PayStatus,
-		JoinedAt:     joined,
+		Name:             req.Name,
+		Phone:            req.Phone,
+		ParentPhone:      req.ParentPhone,
+		StudentClass:     req.StudentClass,
+		Board:            req.Board,
+		Medium:           req.Medium,
+		TeachingLanguage: req.TeachingLanguage,
+		Plan:             req.Plan,
+		PayStatus:        req.PayStatus,
+		JoinedAt:         joined,
 	}
 	if err := h.students.Create(s); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to create student")
@@ -111,6 +113,7 @@ func (h *StudentHandler) Update(c *fiber.Ctx) error {
 	s.StudentClass = req.StudentClass
 	s.Board = req.Board
 	s.Medium = req.Medium
+	s.TeachingLanguage = req.TeachingLanguage
 	s.Plan = req.Plan
 	s.PayStatus = req.PayStatus
 	if req.JoinedAt != nil {

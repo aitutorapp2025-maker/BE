@@ -62,15 +62,17 @@ func ParseToken(secret, tokenStr string) (*Claims, error) {
 type StudentClaims struct {
 	StudentID uint   `json:"student_id"`
 	Phone     string `json:"phone"`
+	SID       string `json:"sid"` // session id (for the signing secret + nonces)
 	jwt.RegisteredClaims
 }
 
-// GenerateStudentToken signs a JWT for the given student, valid for ttl.
-func GenerateStudentToken(secret string, ttl time.Duration, s model.Student) (string, time.Time, error) {
+// GenerateStudentToken signs a JWT for the given student + session, valid for ttl.
+func GenerateStudentToken(secret string, ttl time.Duration, s model.Student, sid string) (string, time.Time, error) {
 	expiresAt := time.Now().Add(ttl)
 	claims := StudentClaims{
 		StudentID: s.ID,
 		Phone:     s.Phone,
+		SID:       sid,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   s.Phone,
 			ExpiresAt: jwt.NewNumericDate(expiresAt),

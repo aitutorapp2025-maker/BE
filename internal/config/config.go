@@ -18,6 +18,11 @@ type Config struct {
 	AppEnv  string
 	AppPort string
 
+	// OTPStatic is the fixed verification code used in development so no SMS is
+	// sent and login can be tested offline. Ignored in production, where a real
+	// random code is generated and delivered by the SMS gateway.
+	OTPStatic string
+
 	DB       DBConfig
 	Redis    RedisConfig
 	RabbitMQ RabbitMQConfig
@@ -92,9 +97,10 @@ func Load() Config {
 	_ = godotenv.Load()
 
 	return Config{
-		AppName: env("APP_NAME", "Vaha AI Backend"),
-		AppEnv:  env("APP_ENV", "development"),
-		AppPort: env("APP_PORT", "8080"),
+		AppName:   env("APP_NAME", "Vaha AI Backend"),
+		AppEnv:    env("APP_ENV", "development"),
+		AppPort:   env("APP_PORT", "8080"),
+		OTPStatic: env("OTP_STATIC", "202627"),
 		DB: DBConfig{
 			Host:     env("DB_HOST", "127.0.0.1"),
 			Port:     env("DB_PORT", "5432"),

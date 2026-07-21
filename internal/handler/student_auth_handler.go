@@ -57,11 +57,13 @@ type verifyOtpRequest struct {
 	Phone       string `json:"phone"`
 	Code        string `json:"code"`
 	DeviceToken string `json:"device_token"` // optional FCM token from the device
+	ClientPub   string `json:"client_pub"`   // base64 X25519 pubkey for E2E key exchange
 }
 
-// VerifyOTP checks the code and, on success, signs the student in.
+// VerifyOTP checks the code and, on success, signs the student in — issuing the
+// access token, per-session signing secret and E2E server public key.
 //
-// POST /api/v1/student/verify-otp  { "phone": "...", "code": "123456", "device_token": "..." }
+// POST /api/v1/student/verify-otp  { "phone": "...", "code": "123456", "client_pub": "..." }
 func (h *StudentAuthHandler) VerifyOTP(c *fiber.Ctx) error {
 	var req verifyOtpRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -71,7 +73,7 @@ func (h *StudentAuthHandler) VerifyOTP(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "code is required")
 	}
 
-	result, err := h.auth.VerifyOTP(c.Context(), req.Phone, req.Code, req.DeviceToken)
+	result, err := h.auth.VerifyOTP(c.Context(), req.Phone, req.Code, req.DeviceToken, req.ClientPub)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrInvalidPhone):
@@ -84,12 +86,14 @@ func (h *StudentAuthHandler) VerifyOTP(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"success":    true,
-		"token":      result.Token,
-		"token_type": "Bearer",
-		"expires_at": result.ExpiresAt,
-		"is_new":     result.IsNew,
-		"student":    result.Student,
+		"success":        true,
+		"token":          result.Token,
+		"token_type":     "Bearer",
+		"signing_secret": result.SigningSecret,
+		"server_pub":     result.ServerPub,
+		"expires_at":     result.ExpiresAt,
+		"is_new":         result.IsNew,
+		"student":        result.Student,
 	})
 }
 
@@ -110,11 +114,12 @@ func (h *StudentAuthHandler) Me(c *fiber.Ctx) error {
 }
 
 type updateProfileRequest struct {
-	Name         string `json:"name"`
-	StudentClass string `json:"student_class"`
-	Board        string `json:"board"`
-	Medium       string `json:"medium"`
-	ParentPhone  string `json:"parent_phone"`
+	Name             string `json:"name"`
+	StudentClass     string `json:"student_class"`
+	Board            string `json:"board"`
+	Medium           string `json:"medium"`
+	TeachingLanguage string `json:"teaching_language"`
+	ParentPhone      string `json:"parent_phone"`
 }
 
 // UpdateProfile saves the signed-in student's profile so it persists on the
@@ -134,11 +139,12 @@ func (h *StudentAuthHandler) UpdateProfile(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "name is required")
 	}
 	st, err := h.auth.UpdateProfile(c.Context(), studentID, service.StudentProfileInput{
-		Name:         req.Name,
-		StudentClass: req.StudentClass,
-		Board:        req.Board,
-		Medium:       req.Medium,
-		ParentPhone:  req.ParentPhone,
+		Name:             req.Name,
+		StudentClass:     req.StudentClass,
+		Board:            req.Board,
+		Medium:           req.Medium,
+		TeachingLanguage: req.TeachingLanguage,
+		ParentPhone:      req.ParentPhone,
 	})
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "could not save your profile")

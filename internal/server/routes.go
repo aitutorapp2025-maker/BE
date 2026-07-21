@@ -25,6 +25,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	deviceTokenRepo := repository.NewDeviceTokenRepository(d.DB)
 	legalRepo := repository.NewLegalRepository(d.DB)
 	dashboardRepo := repository.NewDashboardRepository(d.DB)
+	teachingLangRepo := repository.NewTeachingLanguageRepository(d.DB)
 
 	// Landing content repositories.
 	navRepo := repository.NewOrderedRepo[model.LandingNavItem](d.DB)
@@ -62,6 +63,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService)
 	legalHandler := handler.NewLegalHandler(legalRepo)
 	dashboardHandler := handler.NewDashboardHandler(dashboardRepo)
+	teachingLangHandler := handler.NewTeachingLanguageHandler(teachingLangRepo)
 
 	// ── Public routes ────────────────────────────────────────────────────
 	app.Get("/health", healthHandler.Check)
@@ -81,6 +83,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	v1.Post("/contact", enc, contactHandler.Submit)
 	// Legal documents (Terms & Conditions, etc.) shown in the app.
 	v1.Get("/legal/:key", enc, legalHandler.Public)
+	// Active teaching languages for the app profile screen.
+	v1.Get("/teaching-languages", enc, teachingLangHandler.Public)
 
 	// Student (mobile) passwordless login — OTP over SMS. Encrypted end-to-end
 	// like the other public endpoints (phone number + code stay opaque).
@@ -89,8 +93,12 @@ func registerRoutes(app *fiber.App, d Deps) {
 	student.Post("/register-device", enc, studentAuthHandler.RegisterDevice)
 	student.Post("/send-otp", enc, studentAuthHandler.SendOTP)
 	student.Post("/verify-otp", enc, studentAuthHandler.VerifyOTP)
-	// Signed-in student endpoints (profile + device token).
-	studentProtected := student.Group("", middleware.StudentAuth(d.Cfg), enc)
+	// Signed-in student endpoints (profile + device token) — protected by the
+	// same strong scheme as admin: signed request (JWT + one-time nonce + HMAC
+	// signature) with end-to-end encrypted payloads.
+	studentProtected := student.Group("",
+		middleware.SignedStudent(d.Cfg, sessStore),
+		middleware.Encrypt(sessStore))
 	studentProtected.Get("/me", studentAuthHandler.Me)
 	studentProtected.Put("/profile", studentAuthHandler.UpdateProfile)
 	studentProtected.Post("/device-token", studentAuthHandler.SaveDeviceToken)
@@ -108,10 +116,11 @@ func registerRoutes(app *fiber.App, d Deps) {
 
 	// ── Admin ────────────────────────────────────────────────────────────
 	admin := v1.Group("/admin")
-	admin.Post("/login", adminAuthHandler.Login)
-	// Refresh is authenticated by the (single-use) refresh token itself, so it
-	// is not signature-protected (the access token may be expired here).
-	admin.Post("/refresh", adminAuthHandler.Refresh)
+	// Login + refresh are end-to-end encrypted via the anonymous handshake key
+	// (no session key exists yet), so credentials + tokens stay opaque on the
+	// wire. They are not signature-protected (no session/secret yet).
+	admin.Post("/login", enc, adminAuthHandler.Login)
+	admin.Post("/refresh", enc, adminAuthHandler.Refresh)
 
 	// Protected admin routes require a signed request: valid JWT + timestamp +
 	// HMAC signature + a one-time nonce (see middleware.SignedAdmin). The Encrypt
@@ -168,6 +177,13 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Legal documents (Terms & Conditions, etc.) — admin editing.
 	adminProtected.Get("/legal/:key", legalHandler.Get)
 	adminProtected.Put("/legal/:key", legalHandler.Update)
+
+	// Teaching languages master (admin CRUD).
+	langs := adminProtected.Group("/teaching-languages")
+	langs.Get("", teachingLangHandler.List)
+	langs.Post("", teachingLangHandler.Create)
+	langs.Put("/:id", teachingLangHandler.Update)
+	langs.Delete("/:id", teachingLangHandler.Delete)
 
 	// Contact submissions (enquiries).
 	contacts := adminProtected.Group("/contacts")

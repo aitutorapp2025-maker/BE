@@ -35,7 +35,29 @@ func Migrate(db *gorm.DB) error {
 		&model.ContactMessage{},
 		&model.DeviceToken{},
 		&model.LegalDocument{},
+		&model.TeachingLanguage{},
 	)
+}
+
+// SeedTeachingLanguages inserts the default teaching languages if none exist.
+func SeedTeachingLanguages(db *gorm.DB) (int, error) {
+	var count int64
+	if err := db.Model(&model.TeachingLanguage{}).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	if count > 0 {
+		return 0, nil
+	}
+	langs := []model.TeachingLanguage{
+		{Name: "Tamil", Active: true},
+		{Name: "English", Active: true},
+		{Name: "Hindi", Active: true},
+		{Name: "Telugu", Active: true},
+	}
+	if err := db.Create(&langs).Error; err != nil {
+		return 0, err
+	}
+	return len(langs), nil
 }
 
 // termsSeedContent is the default Terms & Conditions body. Lines starting with
