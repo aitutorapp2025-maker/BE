@@ -93,6 +93,59 @@ func (h *StudentAuthHandler) VerifyOTP(c *fiber.Ctx) error {
 	})
 }
 
+// Me returns the signed-in student's account (used to restore profile state,
+// e.g. after a reinstall the app re-fetches whether the profile is complete).
+//
+// GET /api/v1/student/me  (Bearer student JWT)
+func (h *StudentAuthHandler) Me(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	st, err := h.auth.GetStudent(c.Context(), studentID)
+	if err != nil {
+		return fiber.NewError(fiber.StatusUnauthorized, "account not found")
+	}
+	return c.JSON(fiber.Map{"success": true, "student": st})
+}
+
+type updateProfileRequest struct {
+	Name         string `json:"name"`
+	StudentClass string `json:"student_class"`
+	Board        string `json:"board"`
+	Medium       string `json:"medium"`
+	ParentPhone  string `json:"parent_phone"`
+}
+
+// UpdateProfile saves the signed-in student's profile so it persists on the
+// server (and is returned on the next login, surviving a reinstall).
+//
+// PUT /api/v1/student/profile  { "name": "...", "student_class": "...", ... }
+func (h *StudentAuthHandler) UpdateProfile(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	var req updateProfileRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "name is required")
+	}
+	st, err := h.auth.UpdateProfile(c.Context(), studentID, service.StudentProfileInput{
+		Name:         req.Name,
+		StudentClass: req.StudentClass,
+		Board:        req.Board,
+		Medium:       req.Medium,
+		ParentPhone:  req.ParentPhone,
+	})
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "could not save your profile")
+	}
+	return c.JSON(fiber.Map{"success": true, "student": st})
+}
+
 type registerDeviceRequest struct {
 	Token    string `json:"token"`
 	Platform string `json:"platform"`

@@ -152,6 +152,39 @@ func (s *StudentAuthService) VerifyOTP(ctx context.Context, phone, code, deviceT
 	return &StudentAuthResult{Token: token, ExpiresAt: exp, Student: *student, IsNew: isNew}, nil
 }
 
+// StudentProfileInput carries the editable profile fields for a student.
+type StudentProfileInput struct {
+	Name         string
+	StudentClass string
+	Board        string
+	Medium       string
+	ParentPhone  string
+}
+
+// GetStudent returns a student by id (for the signed-in student to load their
+// own account).
+func (s *StudentAuthService) GetStudent(ctx context.Context, studentID uint) (*model.Student, error) {
+	return s.students.FindByID(studentID)
+}
+
+// UpdateProfile saves the signed-in student's profile (name, class, board,
+// medium, parent phone) so it persists on the server — surviving a reinstall.
+func (s *StudentAuthService) UpdateProfile(ctx context.Context, studentID uint, in StudentProfileInput) (*model.Student, error) {
+	st, err := s.students.FindByID(studentID)
+	if err != nil {
+		return nil, err
+	}
+	st.Name = strings.TrimSpace(in.Name)
+	st.StudentClass = strings.TrimSpace(in.StudentClass)
+	st.Board = strings.TrimSpace(in.Board)
+	st.Medium = strings.TrimSpace(in.Medium)
+	st.ParentPhone = strings.TrimSpace(in.ParentPhone)
+	if err := s.students.Update(st); err != nil {
+		return nil, err
+	}
+	return st, nil
+}
+
 // SaveDeviceToken maps an FCM push token to a signed-in student + phone (e.g.
 // when the token is fetched or refreshed after login).
 func (s *StudentAuthService) SaveDeviceToken(ctx context.Context, studentID uint, phone, token string) error {

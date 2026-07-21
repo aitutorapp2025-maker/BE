@@ -23,6 +23,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	planRepo := repository.NewPlanRepository(d.DB)
 	settingRepo := repository.NewSettingRepository(d.DB)
 	deviceTokenRepo := repository.NewDeviceTokenRepository(d.DB)
+	legalRepo := repository.NewLegalRepository(d.DB)
+	dashboardRepo := repository.NewDashboardRepository(d.DB)
 
 	// Landing content repositories.
 	navRepo := repository.NewOrderedRepo[model.LandingNavItem](d.DB)
@@ -58,6 +60,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	contactHandler := handler.NewContactHandler(contactRepo, settingRepo, emailPublisher, smsPublisher, d.Log)
 	handshakeHandler := handler.NewHandshakeHandler(sessStore)
 	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService)
+	legalHandler := handler.NewLegalHandler(legalRepo)
+	dashboardHandler := handler.NewDashboardHandler(dashboardRepo)
 
 	// ── Public routes ────────────────────────────────────────────────────
 	app.Get("/health", healthHandler.Check)
@@ -75,6 +79,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	enc := middleware.Encrypt(sessStore)
 	v1.Get("/landing", enc, landingHandler.Public)
 	v1.Post("/contact", enc, contactHandler.Submit)
+	// Legal documents (Terms & Conditions, etc.) shown in the app.
+	v1.Get("/legal/:key", enc, legalHandler.Public)
 
 	// Student (mobile) passwordless login — OTP over SMS. Encrypted end-to-end
 	// like the other public endpoints (phone number + code stay opaque).
@@ -83,9 +89,11 @@ func registerRoutes(app *fiber.App, d Deps) {
 	student.Post("/register-device", enc, studentAuthHandler.RegisterDevice)
 	student.Post("/send-otp", enc, studentAuthHandler.SendOTP)
 	student.Post("/verify-otp", enc, studentAuthHandler.VerifyOTP)
-	// Re-mapping the FCM token after login requires a signed-in student.
-	student.Post("/device-token",
-		middleware.StudentAuth(d.Cfg), enc, studentAuthHandler.SaveDeviceToken)
+	// Signed-in student endpoints (profile + device token).
+	studentProtected := student.Group("", middleware.StudentAuth(d.Cfg), enc)
+	studentProtected.Get("/me", studentAuthHandler.Me)
+	studentProtected.Put("/profile", studentAuthHandler.UpdateProfile)
+	studentProtected.Post("/device-token", studentAuthHandler.SaveDeviceToken)
 
 	// Public client-side error reporting (emails an alert to the admin).
 	errorReportHandler := handler.NewErrorReportHandler(d.Alerter)
@@ -115,6 +123,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	adminProtected.Get("/me", adminAuthHandler.Me)
 	adminProtected.Post("/logout", adminAuthHandler.Logout)
 	adminProtected.Post("/change-password", adminAuthHandler.ChangePassword)
+
+	// Dashboard overview (aggregate stats + recent students).
+	adminProtected.Get("/dashboard", dashboardHandler.Get)
 
 	// Students CRUD.
 	students := adminProtected.Group("/students")
@@ -153,6 +164,10 @@ func registerRoutes(app *fiber.App, d Deps) {
 	adminProtected.Put("/settings", settingHandler.Update)
 	adminProtected.Post("/settings/test-email", settingHandler.TestEmail)
 	adminProtected.Post("/settings/test-sms", settingHandler.TestSMS)
+
+	// Legal documents (Terms & Conditions, etc.) — admin editing.
+	adminProtected.Get("/legal/:key", legalHandler.Get)
+	adminProtected.Put("/legal/:key", legalHandler.Update)
 
 	// Contact submissions (enquiries).
 	contacts := adminProtected.Group("/contacts")

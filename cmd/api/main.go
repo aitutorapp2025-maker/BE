@@ -77,6 +77,12 @@ func main() {
 		log.Infof("seeded landing-page content")
 	}
 
+	if seeded, err := database.SeedLegal(db); err != nil {
+		log.Fatalf("seed legal: %v", err)
+	} else if seeded {
+		log.Infof("seeded terms & conditions")
+	}
+
 	// ── Redis ────────────────────────────────────────────────────────────
 	rdb, err := cache.Connect(cfg)
 	if err != nil {
