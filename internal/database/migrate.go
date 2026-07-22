@@ -23,6 +23,7 @@ func Migrate(db *gorm.DB) error {
 		&model.Admin{},
 		&model.Student{},
 		&model.SchoolClass{},
+		&model.ClassGroup{},
 		&model.Book{},
 		&model.Plan{},
 		&model.Setting{},
@@ -133,6 +134,36 @@ func SeedClasses(db *gorm.DB) (int, error) {
 		return 0, err
 	}
 	return len(classes), nil
+}
+
+// SeedClassGroups inserts the higher-secondary subject groups if none exist.
+// State Board Class 11 & 12 offer Computer Science / Biology / Commerce / Arts
+// / Vocational; the admin can add other boards' streams from the class page.
+func SeedClassGroups(db *gorm.DB) (int, error) {
+	var count int64
+	if err := db.Model(&model.ClassGroup{}).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	if count > 0 {
+		return 0, nil
+	}
+	names := []string{"Computer Science", "Biology", "Commerce", "Arts", "Vocational"}
+	groups := make([]model.ClassGroup, 0, len(names)*2)
+	for _, class := range []string{"Class 11", "Class 12"} {
+		for i, name := range names {
+			groups = append(groups, model.ClassGroup{
+				ClassName: class,
+				Board:     "State Board",
+				Name:      name,
+				SortOrder: i,
+				Active:    true,
+			})
+		}
+	}
+	if err := db.Create(&groups).Error; err != nil {
+		return 0, err
+	}
+	return len(groups), nil
 }
 
 // SeedBooks inserts a few demo books if the table is empty.

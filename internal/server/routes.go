@@ -19,6 +19,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	adminRepo := repository.NewAdminRepository(d.DB)
 	studentRepo := repository.NewStudentRepository(d.DB)
 	classRepo := repository.NewClassRepository(d.DB)
+	classGroupRepo := repository.NewClassGroupRepository(d.DB)
 	bookRepo := repository.NewBookRepository(d.DB)
 	planRepo := repository.NewPlanRepository(d.DB)
 	settingRepo := repository.NewSettingRepository(d.DB)
@@ -45,7 +46,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	healthHandler := handler.NewHealthHandler(d.DB, d.Redis, d.MQ)
 	adminAuthHandler := handler.NewAdminAuthHandler(authService, adminRepo)
 	studentHandler := handler.NewStudentHandler(studentRepo)
-	classHandler := handler.NewClassHandler(classRepo)
+	classHandler := handler.NewClassHandler(classRepo, classGroupRepo)
+	classGroupHandler := handler.NewClassGroupHandler(classGroupRepo)
 	bookHandler := handler.NewBookHandler(bookRepo)
 	planHandler := handler.NewPlanHandler(planRepo)
 	settingHandler := handler.NewSettingHandler(settingRepo, emailPublisher, smsPublisher)
@@ -60,7 +62,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	landingTextHandler := handler.NewLandingTextHandler(landingTextRepo)
 	contactHandler := handler.NewContactHandler(contactRepo, settingRepo, emailPublisher, smsPublisher, d.Log)
 	handshakeHandler := handler.NewHandshakeHandler(sessStore)
-	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService)
+	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo)
 	legalHandler := handler.NewLegalHandler(legalRepo)
 	dashboardHandler := handler.NewDashboardHandler(dashboardRepo)
 	teachingLangHandler := handler.NewTeachingLanguageHandler(teachingLangRepo)
@@ -85,6 +87,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	v1.Get("/legal/:key", enc, legalHandler.Public)
 	// Active teaching languages for the app profile screen.
 	v1.Get("/teaching-languages", enc, teachingLangHandler.Public)
+	// Subject groups (11 & 12 streams) for the app profile screen — optionally
+	// filtered with ?class=&board=.
+	v1.Get("/class-groups", enc, classGroupHandler.Public)
 
 	// Student (mobile) passwordless login — OTP over SMS. Encrypted end-to-end
 	// like the other public endpoints (phone number + code stay opaque).
@@ -151,6 +156,14 @@ func registerRoutes(app *fiber.App, d Deps) {
 	classes.Get("/:id", classHandler.Get)
 	classes.Put("/:id", classHandler.Update)
 	classes.Delete("/:id", classHandler.Delete)
+
+	// Class groups — the subject streams offered for a class + board (11 & 12).
+	// List supports ?class= to scope it to one class.
+	classGroups := adminProtected.Group("/class-groups")
+	classGroups.Get("", classGroupHandler.List)
+	classGroups.Post("", classGroupHandler.Create)
+	classGroups.Put("/:id", classGroupHandler.Update)
+	classGroups.Delete("/:id", classGroupHandler.Delete)
 
 	// Books CRUD (list supports ?class_name= & ?medium=).
 	books := adminProtected.Group("/books")

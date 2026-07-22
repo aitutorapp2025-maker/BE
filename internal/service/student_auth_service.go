@@ -201,6 +201,7 @@ type StudentProfileInput struct {
 	StudentClass     string
 	Board            string
 	Medium           string
+	StudentGroup     string
 	TeachingLanguage string
 	ParentPhone      string
 }
@@ -222,6 +223,7 @@ func (s *StudentAuthService) UpdateProfile(ctx context.Context, studentID uint, 
 	st.StudentClass = strings.TrimSpace(in.StudentClass)
 	st.Board = strings.TrimSpace(in.Board)
 	st.Medium = strings.TrimSpace(in.Medium)
+	st.StudentGroup = strings.TrimSpace(in.StudentGroup)
 	st.TeachingLanguage = strings.TrimSpace(in.TeachingLanguage)
 	st.ParentPhone = strings.TrimSpace(in.ParentPhone)
 	if err := s.students.Update(st); err != nil {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/gofiber/fiber/v2"
 )
@@ -11,12 +12,17 @@ import (
 // StudentAuthHandler handles passwordless student login (OTP over SMS) for the
 // mobile app.
 type StudentAuthHandler struct {
-	auth *service.StudentAuthService
+	auth   *service.StudentAuthService
+	groups *repository.ClassGroupRepository
 }
 
-// NewStudentAuthHandler builds a StudentAuthHandler.
-func NewStudentAuthHandler(auth *service.StudentAuthService) *StudentAuthHandler {
-	return &StudentAuthHandler{auth: auth}
+// NewStudentAuthHandler builds a StudentAuthHandler. The class-group repo is
+// used to validate the subject group the student picks during onboarding.
+func NewStudentAuthHandler(
+	auth *service.StudentAuthService,
+	groups *repository.ClassGroupRepository,
+) *StudentAuthHandler {
+	return &StudentAuthHandler{auth: auth, groups: groups}
 }
 
 type sendOtpRequest struct {
@@ -118,6 +124,7 @@ type updateProfileRequest struct {
 	StudentClass     string `json:"student_class"`
 	Board            string `json:"board"`
 	Medium           string `json:"medium"`
+	StudentGroup     string `json:"student_group"`
 	TeachingLanguage string `json:"teaching_language"`
 	ParentPhone      string `json:"parent_phone"`
 }
@@ -138,11 +145,18 @@ func (h *StudentAuthHandler) UpdateProfile(c *fiber.Ctx) error {
 	if strings.TrimSpace(req.Name) == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "name is required")
 	}
+	// Classes that offer subject groups (11 & 12) must have one picked, and it
+	// has to be one the admin actually configured for that class + board.
+	group, err := h.resolveGroup(req.StudentClass, req.Board, req.StudentGroup)
+	if err != nil {
+		return err
+	}
 	st, err := h.auth.UpdateProfile(c.Context(), studentID, service.StudentProfileInput{
 		Name:             req.Name,
 		StudentClass:     req.StudentClass,
 		Board:            req.Board,
 		Medium:           req.Medium,
+		StudentGroup:     group,
 		TeachingLanguage: req.TeachingLanguage,
 		ParentPhone:      req.ParentPhone,
 	})
@@ -150,6 +164,34 @@ func (h *StudentAuthHandler) UpdateProfile(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "could not save your profile")
 	}
 	return c.JSON(fiber.Map{"success": true, "student": st})
+}
+
+// resolveGroup validates the subject group chosen during onboarding against the
+// groups the admin configured for that class + board. Classes with no groups
+// (1–10) simply store a blank group; classes that have them require one.
+func (h *StudentAuthHandler) resolveGroup(className, board, chosen string) (string, error) {
+	className = strings.TrimSpace(className)
+	board = strings.TrimSpace(board)
+	chosen = strings.TrimSpace(chosen)
+	if className == "" {
+		return "", nil
+	}
+	available, err := h.groups.ListActive(className, board)
+	if err != nil {
+		return "", fiber.NewError(fiber.StatusInternalServerError, "could not load the groups for your class")
+	}
+	if len(available) == 0 {
+		return "", nil // this class doesn't use groups
+	}
+	if chosen == "" {
+		return "", fiber.NewError(fiber.StatusBadRequest, "please choose your group")
+	}
+	for _, g := range available {
+		if strings.EqualFold(g.Name, chosen) {
+			return g.Name, nil
+		}
+	}
+	return "", fiber.NewError(fiber.StatusBadRequest, "that group isn't available for your class")
 }
 
 type registerDeviceRequest struct {

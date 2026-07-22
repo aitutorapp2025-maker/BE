@@ -11,11 +11,16 @@ import (
 // ClassHandler exposes CRUD endpoints for the class master (admin only).
 type ClassHandler struct {
 	classes *repository.ClassRepository
+	groups  *repository.ClassGroupRepository
 }
 
-// NewClassHandler builds a ClassHandler.
-func NewClassHandler(classes *repository.ClassRepository) *ClassHandler {
-	return &ClassHandler{classes: classes}
+// NewClassHandler builds a ClassHandler. The class-group repo lets a rename
+// carry the class's subject groups along with it.
+func NewClassHandler(
+	classes *repository.ClassRepository,
+	groups *repository.ClassGroupRepository,
+) *ClassHandler {
+	return &ClassHandler{classes: classes, groups: groups}
 }
 
 type classRequest struct {
@@ -76,6 +81,7 @@ func (h *ClassHandler) Update(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	oldName := cls.Name
 	cls.Name = req.Name
 	cls.Number = req.Number
 	if req.Active != nil {
@@ -83,6 +89,10 @@ func (h *ClassHandler) Update(c *fiber.Ctx) error {
 	}
 	if err := h.classes.Update(cls); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to update class")
+	}
+	// Groups are keyed by class name — follow the rename so they aren't orphaned.
+	if err := h.groups.RenameClass(oldName, cls.Name); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to move the class groups")
 	}
 	return c.JSON(fiber.Map{"success": true, "class": cls})
 }

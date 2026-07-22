@@ -29,6 +29,7 @@ type studentRequest struct {
 	StudentClass     string     `json:"student_class"`
 	Board            string     `json:"board"`
 	Medium           string     `json:"medium"`
+	StudentGroup     string     `json:"student_group"`
 	TeachingLanguage string     `json:"teaching_language"`
 	Plan             string     `json:"plan"`
 	PayStatus        string     `json:"pay_status"`
@@ -80,6 +81,7 @@ func (h *StudentHandler) Create(c *fiber.Ctx) error {
 		StudentClass:     req.StudentClass,
 		Board:            req.Board,
 		Medium:           req.Medium,
+		StudentGroup:     req.StudentGroup,
 		TeachingLanguage: req.TeachingLanguage,
 		Plan:             req.Plan,
 		PayStatus:        req.PayStatus,
@@ -113,6 +115,7 @@ func (h *StudentHandler) Update(c *fiber.Ctx) error {
 	s.StudentClass = req.StudentClass
 	s.Board = req.Board
 	s.Medium = req.Medium
+	s.StudentGroup = req.StudentGroup
 	s.TeachingLanguage = req.TeachingLanguage
 	s.Plan = req.Plan
 	s.PayStatus = req.PayStatus
@@ -148,6 +151,7 @@ func parseStudentBody(c *fiber.Ctx) (*studentRequest, error) {
 	if req.Name == "" {
 		return nil, fiber.NewError(fiber.StatusBadRequest, "name is required")
 	}
+	req.StudentGroup = strings.TrimSpace(req.StudentGroup)
 	if req.Plan == "" || !validPlans[req.Plan] {
 		req.Plan = "trial"
 	}

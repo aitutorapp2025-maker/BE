@@ -56,6 +56,11 @@ func main() {
 	} else if n > 0 {
 		log.Infof("seeded %d classes", n)
 	}
+	if n, err := database.SeedClassGroups(db); err != nil {
+		log.Fatalf("seed class groups: %v", err)
+	} else if n > 0 {
+		log.Infof("seeded %d class groups", n)
+	}
 	if n, err := database.SeedBooks(db); err != nil {
 		log.Fatalf("seed books: %v", err)
 	} else if n > 0 {

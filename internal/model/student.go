@@ -11,6 +11,9 @@ type Student struct {
 	StudentClass string    `gorm:"size:40;not null" json:"student_class"` // e.g. "Class 10"
 	Board        string    `gorm:"size:40;not null" json:"board"`         // State Board / CBSE / ICSE
 	Medium       string    `gorm:"size:20;not null" json:"medium"`        // English / Tamil
+	// StudentGroup is the subject group / stream, asked only for classes that
+	// have groups configured (higher secondary — 11 & 12). Blank otherwise.
+	StudentGroup string `gorm:"size:60" json:"student_group"` // e.g. "Computer Science"
 	// TeachingLanguage is the admin-managed language of instruction (Tamil /
 	// English / Hindi / Telugu ...).
 	TeachingLanguage string `gorm:"size:40" json:"teaching_language"`
