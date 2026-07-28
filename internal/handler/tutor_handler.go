@@ -47,6 +47,17 @@ func (h *TutorHandler) Ask(c *fiber.Ctx) error {
 		return notFoundOrInternal(err, "student")
 	}
 
+	// Trial requires autopay. If the student is on trial but hasn't enabled (or
+	// has deleted) their UPI-AutoPay mandate, they can't use the trial — prompt
+	// them to enable it. Paid students are unaffected.
+	if st.PayStatus == "trial" && !st.AutopayActive {
+		return c.Status(fiber.StatusPaymentRequired).JSON(fiber.Map{
+			"success":       false,
+			"error":         "Enable autopay to start your free trial.",
+			"needs_autopay": true,
+		})
+	}
+
 	// Credit gate: check the balance up front so we don't pay for an AI call the
 	// student can't afford. (Charged only after a successful answer, below.)
 	ok, balance, err := h.credits.CanAfford(studentID, service.ActionAskText)

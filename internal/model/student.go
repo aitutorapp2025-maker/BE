@@ -28,9 +28,14 @@ type Student struct {
 	// TrialEndsAt is when the free trial expires. The base-plan subscription is
 	// scheduled to auto-debit at this time (Razorpay start_at).
 	TrialEndsAt *time.Time `json:"trial_ends_at"`
-	JoinedAt    time.Time  `json:"joined_at"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	// AutopayActive is true once the student has an authorized UPI-AutoPay
+	// mandate (set by the Razorpay webhook). The trial requires it — if the
+	// student never enables it (or deletes it), the trial can't be used and
+	// expires with no auto-debit.
+	AutopayActive bool      `gorm:"not null;default:false" json:"autopay_active"`
+	JoinedAt      time.Time `json:"joined_at"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // TableName sets the table name explicitly.

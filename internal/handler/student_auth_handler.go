@@ -116,7 +116,9 @@ func (h *StudentAuthHandler) Me(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusUnauthorized, "account not found")
 	}
-	return c.JSON(fiber.Map{"success": true, "student": st})
+	// The app shows an "enable autopay" prompt while a trial has no mandate.
+	needsAutopay := st.PayStatus == "trial" && !st.AutopayActive
+	return c.JSON(fiber.Map{"success": true, "student": st, "needs_autopay": needsAutopay})
 }
 
 type updateProfileRequest struct {

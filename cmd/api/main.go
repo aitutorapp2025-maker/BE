@@ -19,6 +19,7 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/email"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/queue"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/scheduler"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/server"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/sms"
@@ -186,6 +187,12 @@ func main() {
 		log.Infof("tutoring pipeline disabled (install pgvector to enable)")
 	}
 
+	// ── Background scheduler ─────────────────────────────────────────────
+	// Expires trials whose window has passed without autopay (hourly).
+	sched := scheduler.New(repository.NewStudentRepository(db), log)
+	sched.Start(time.Hour)
+	log.Infof("scheduler started (trial expiry)")
+
 	// ── HTTP server ──────────────────────────────────────────────────────
 	app := server.New(server.Deps{
 		Cfg:     cfg,
@@ -211,6 +218,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Infof("shutting down...")
+	sched.Stop()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

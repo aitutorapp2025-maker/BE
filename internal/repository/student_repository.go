@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"gorm.io/gorm"
@@ -48,6 +49,19 @@ func (r *StudentRepository) FindByPhone(phone string) (*model.Student, error) {
 		return nil, err
 	}
 	return &s, nil
+}
+
+// ExpireOverdueTrials marks trials as expired once their trial window has passed
+// AND the student never enabled autopay (no active mandate). Students who did
+// enable autopay are left alone — Razorpay auto-debits the base plan at start_at
+// and the charge webhook converts them to paid. Returns how many were expired.
+func (r *StudentRepository) ExpireOverdueTrials(now time.Time) (int64, error) {
+	res := r.db.Model(&model.Student{}).
+		Where("pay_status = ?", "trial").
+		Where("autopay_active = ?", false).
+		Where("trial_ends_at IS NOT NULL AND trial_ends_at < ?", now).
+		Update("pay_status", "expired")
+	return res.RowsAffected, res.Error
 }
 
 // FindBySubscriptionID returns the student with the given Razorpay subscription

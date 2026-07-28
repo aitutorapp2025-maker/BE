@@ -157,12 +157,27 @@ func (s *PaymentService) HandleWebhook(body []byte, signature string) (bool, err
 		}
 		st.Plan = plan.Name
 		st.PayStatus = "paid"
+		st.AutopayActive = true
 		_ = s.students.Update(st)
 		return true, nil
 
-	case "subscription.halted", "subscription.cancelled", "subscription.completed":
+	case "subscription.authenticated", "subscription.activated":
+		// The mandate is set up (UPI AutoPay enabled) — the trial is now usable
+		// and the base plan will auto-debit at start_at.
 		if st, err := s.students.FindBySubscriptionID(subID); err == nil {
-			st.PayStatus = "expired"
+			st.AutopayActive = true
+			_ = s.students.Update(st)
+		}
+		return true, nil
+
+	case "subscription.halted", "subscription.cancelled", "subscription.completed":
+		// Mandate deleted/stopped — autopay off. The student is prompted to
+		// re-enable it; a trial without autopay can no longer be used.
+		if st, err := s.students.FindBySubscriptionID(subID); err == nil {
+			st.AutopayActive = false
+			if st.PayStatus == "paid" {
+				st.PayStatus = "expired"
+			}
 			_ = s.students.Update(st)
 		}
 		return true, nil
