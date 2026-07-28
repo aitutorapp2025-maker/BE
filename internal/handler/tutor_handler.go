@@ -10,15 +10,17 @@ import (
 
 // TutorHandler answers a signed-in student's textbook question (RAG). It reads
 // the student's class / board / medium / group from their stored profile so the
-// retrieval is scoped correctly — the client only sends the question.
+// retrieval is scoped correctly — the client only sends the question. Each
+// answer is metered against the student's AI credit balance.
 type TutorHandler struct {
 	tutor    *service.TutorService
 	students *repository.StudentRepository
+	credits  *service.CreditService
 }
 
 // NewTutorHandler builds a TutorHandler.
-func NewTutorHandler(tutor *service.TutorService, students *repository.StudentRepository) *TutorHandler {
-	return &TutorHandler{tutor: tutor, students: students}
+func NewTutorHandler(tutor *service.TutorService, students *repository.StudentRepository, credits *service.CreditService) *TutorHandler {
+	return &TutorHandler{tutor: tutor, students: students, credits: credits}
 }
 
 type askRequest struct {
@@ -45,6 +47,20 @@ func (h *TutorHandler) Ask(c *fiber.Ctx) error {
 		return notFoundOrInternal(err, "student")
 	}
 
+	// Credit gate: check the balance up front so we don't pay for an AI call the
+	// student can't afford. (Charged only after a successful answer, below.)
+	ok, balance, err := h.credits.CanAfford(studentID, service.ActionAskText)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "could not check your credits")
+	}
+	if !ok {
+		return c.Status(fiber.StatusPaymentRequired).JSON(fiber.Map{
+			"success": false,
+			"error":   "You're out of credits. Please recharge to keep learning.",
+			"credits": balance,
+		})
+	}
+
 	result, err := h.tutor.Ask(c.Context(), req.Question, service.StudentContext{
 		Class:            st.StudentClass,
 		Medium:           st.Medium,
@@ -55,10 +71,20 @@ func (h *TutorHandler) Ask(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "could not answer right now, please try again")
 	}
+
+	// Charge only a genuine, grounded answer. If nothing was indexed for the
+	// class (not the student's fault) we don't bill the credit.
+	balance = st.Credits
+	if result.Grounded {
+		if nb, err := h.credits.Charge(studentID, service.ActionAskText); err == nil {
+			balance = nb
+		}
+	}
 	return c.JSON(fiber.Map{
 		"success":  true,
 		"answer":   result.Answer,
 		"grounded": result.Grounded,
 		"sources":  result.Sources,
+		"credits":  balance,
 	})
 }

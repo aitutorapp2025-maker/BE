@@ -23,6 +23,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	classGroupRepo := repository.NewClassGroupRepository(d.DB)
 	bookRepo := repository.NewBookRepository(d.DB)
 	bookChunkRepo := repository.NewBookChunkRepository(d.DB)
+	creditRepo := repository.NewCreditRepository(d.DB)
 	planRepo := repository.NewPlanRepository(d.DB)
 	settingRepo := repository.NewSettingRepository(d.DB)
 	deviceTokenRepo := repository.NewDeviceTokenRepository(d.DB)
@@ -77,7 +78,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	contactHandler := handler.NewContactHandler(contactRepo, settingRepo, emailPublisher, smsPublisher, d.Log)
 	handshakeHandler := handler.NewHandshakeHandler(sessStore)
 	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo)
-	tutorHandler := handler.NewTutorHandler(tutorService, studentRepo)
+	creditService := service.NewCreditService(creditRepo)
+	tutorHandler := handler.NewTutorHandler(tutorService, studentRepo, creditService)
+	creditHandler := handler.NewCreditHandler(creditService, studentRepo)
 	legalHandler := handler.NewLegalHandler(legalRepo)
 	dashboardHandler := handler.NewDashboardHandler(dashboardRepo)
 	teachingLangHandler := handler.NewTeachingLanguageHandler(teachingLangRepo)
@@ -105,6 +108,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Subject groups (11 & 12 streams) for the app profile screen — optionally
 	// filtered with ?class=&board=.
 	v1.Get("/class-groups", enc, classGroupHandler.Public)
+	// Subscription plans for the landing page + student app.
+	v1.Get("/plans", enc, planHandler.Public)
 
 	// Student (mobile) passwordless login — OTP over SMS. Encrypted end-to-end
 	// like the other public endpoints (phone number + code stay opaque).
@@ -158,6 +163,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Dashboard overview (aggregate stats + recent students).
 	adminProtected.Get("/dashboard", dashboardHandler.Get)
 
+	// Billing / profit & loss (revenue vs AI cost — admin only).
+	adminProtected.Get("/billing", creditHandler.PnL)
+
 	// Students CRUD.
 	students := adminProtected.Group("/students")
 	students.Get("", studentHandler.List)
@@ -165,6 +173,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	students.Get("/:id", studentHandler.Get)
 	students.Put("/:id", studentHandler.Update)
 	students.Delete("/:id", studentHandler.Delete)
+	// Credits: top up a student and view their credit history.
+	students.Post("/:id/recharge", creditHandler.Recharge)
+	students.Get("/:id/ledger", creditHandler.Ledger)
 
 	// Classes CRUD.
 	classes := adminProtected.Group("/classes")

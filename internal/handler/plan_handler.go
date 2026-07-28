@@ -26,10 +26,21 @@ type planRequest struct {
 	Tagline      string   `json:"tagline"`
 	Features     []string `json:"features"`
 	BestValue    bool     `json:"best_value"`
+	Credits      int      `json:"credits"`
 }
 
 // List returns all plans. GET /api/v1/admin/plans
 func (h *PlanHandler) List(c *fiber.Ctx) error {
+	plans, err := h.plans.List()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to load plans")
+	}
+	return c.JSON(fiber.Map{"success": true, "plans": plans})
+}
+
+// Public returns the plans for the landing page + student app (ordered by
+// price). GET /api/v1/plans
+func (h *PlanHandler) Public(c *fiber.Ctx) error {
 	plans, err := h.plans.List()
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to load plans")
@@ -59,7 +70,7 @@ func (h *PlanHandler) Create(c *fiber.Ctx) error {
 	p := &model.Plan{
 		Name: req.Name, PriceRupees: req.PriceRupees, MrpRupees: req.MrpRupees,
 		DurationDays: req.DurationDays, Tagline: req.Tagline,
-		Features: req.Features, BestValue: req.BestValue,
+		Features: req.Features, BestValue: req.BestValue, Credits: req.Credits,
 	}
 	if err := h.plans.Create(p); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to create plan")
@@ -88,6 +99,7 @@ func (h *PlanHandler) Update(c *fiber.Ctx) error {
 	p.Tagline = req.Tagline
 	p.Features = req.Features
 	p.BestValue = req.BestValue
+	p.Credits = req.Credits
 	if err := h.plans.Update(p); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to update plan")
 	}

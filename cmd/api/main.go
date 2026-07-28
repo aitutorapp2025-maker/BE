@@ -85,6 +85,12 @@ func main() {
 	} else if n > 0 {
 		log.Infof("seeded %d plans", n)
 	}
+	// Backfill the ₹799/₹999/₹1299 tiers on databases that predate them.
+	if n, err := database.EnsureStarterPlans(db); err != nil {
+		log.Fatalf("ensure plans: %v", err)
+	} else if n > 0 {
+		log.Infof("added %d starter plans (₹799/₹999/₹1299)", n)
+	}
 	if seeded, err := database.SeedSettings(db); err != nil {
 		log.Fatalf("seed settings: %v", err)
 	} else if seeded {

@@ -9,8 +9,8 @@ import "time"
 type DeviceToken struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	Token     string    `gorm:"size:255;uniqueIndex;not null" json:"token"`
-	Platform  string    `gorm:"size:20" json:"platform"` // android | ios | web
-	StudentID *uint     `gorm:"index" json:"student_id"` // nil until mapped to a student
+	Platform  string    `gorm:"size:20" json:"platform"`    // android | ios | web
+	StudentID *uint     `gorm:"index" json:"student_id"`    // nil until mapped to a student
 	Phone     string    `gorm:"size:20;index" json:"phone"` // the mapped mobile number
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

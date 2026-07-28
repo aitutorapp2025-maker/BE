@@ -37,6 +37,7 @@ func Migrate(db *gorm.DB) error {
 		&model.DeviceToken{},
 		&model.LegalDocument{},
 		&model.TeachingLanguage{},
+		&model.CreditLedger{},
 	)
 }
 
@@ -216,26 +217,57 @@ func SeedPlans(db *gorm.DB) (int, error) {
 	if count > 0 {
 		return 0, nil
 	}
-	mrp := 3588
-	plans := []model.Plan{
-		{Name: "Free Trial", PriceRupees: 0, DurationDays: 7,
+	plans := append([]model.Plan{
+		{Name: "Free Trial", PriceRupees: 0, DurationDays: 7, Credits: 20,
 			Tagline: "7 days full access", BestValue: false,
 			Features: []string{"All subjects & features", "No card required",
 				"Converts to paywall after 7 days"}},
-		{Name: "Monthly", PriceRupees: 299, DurationDays: 30,
-			Tagline: "per month", BestValue: false,
-			Features: []string{"Unlimited homework uploads",
-				"AI explanations & doubt chat", "Oral + written + reading tests",
-				"Parent progress reports"}},
-		{Name: "Yearly", PriceRupees: 2499, MrpRupees: &mrp, DurationDays: 365,
-			Tagline: "per year", BestValue: true,
-			Features: []string{"Everything in Monthly",
-				"Best value — save vs monthly", "Priority support"}},
-	}
+	}, starterPaidPlans()...)
 	if err := db.Create(&plans).Error; err != nil {
 		return 0, err
 	}
 	return len(plans), nil
+}
+
+// starterPaidPlans are the three paid tiers (₹799 / ₹999 / ₹1299). Credits are
+// sized at ~15% of price (1 credit = ₹1 of AI budget) so every plan holds the
+// ≥85% gross-margin floor. The ₹999 tier is marked recommended (BestValue).
+func starterPaidPlans() []model.Plan {
+	return []model.Plan{
+		{Name: "Standard", PriceRupees: 799, DurationDays: 30, Credits: 120,
+			Tagline: "per month", BestValue: false,
+			Features: []string{"Daily AI timetable", "Homework teaching & doubt chat",
+				"Written exams + auto-grading", "Parent WhatsApp reports"}},
+		{Name: "Pro", PriceRupees: 999, DurationDays: 30, Credits: 150,
+			Tagline: "per month", BestValue: true,
+			Features: []string{"Everything in Standard", "More AI credits",
+				"Oral + written exams", "Priority answers"}},
+		{Name: "Premium", PriceRupees: 1299, DurationDays: 30, Credits: 195,
+			Tagline: "per month", BestValue: false,
+			Features: []string{"Everything in Pro", "Highest AI credits",
+				"Best for exam prep", "Priority support"}},
+	}
+}
+
+// EnsureStarterPlans inserts the three paid tiers by name if they're missing.
+// It never updates or deletes an existing plan, so admin edits are preserved —
+// it only backfills a database that predates these plans.
+func EnsureStarterPlans(db *gorm.DB) (int, error) {
+	added := 0
+	for _, p := range starterPaidPlans() {
+		var count int64
+		if err := db.Model(&model.Plan{}).Where("name = ?", p.Name).Count(&count).Error; err != nil {
+			return added, err
+		}
+		if count > 0 {
+			continue
+		}
+		if err := db.Create(&p).Error; err != nil {
+			return added, err
+		}
+		added++
+	}
+	return added, nil
 }
 
 // SeedSettings inserts the single default settings row if none exists.
