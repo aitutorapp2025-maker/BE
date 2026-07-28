@@ -50,6 +50,20 @@ func (r *StudentRepository) FindByPhone(phone string) (*model.Student, error) {
 	return &s, nil
 }
 
+// FindBySubscriptionID returns the student with the given Razorpay subscription
+// id (used by the payment webhook to match a charge back to a student).
+func (r *StudentRepository) FindBySubscriptionID(subID string) (*model.Student, error) {
+	var s model.Student
+	err := r.db.Where("razorpay_subscription_id = ?", subID).First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
 // Create inserts a new student.
 func (r *StudentRepository) Create(s *model.Student) error {
 	return r.db.Create(s).Error

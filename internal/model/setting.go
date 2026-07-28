@@ -60,12 +60,22 @@ type Setting struct {
 	VoyageAPIKey    string `gorm:"size:255" json:"-"`
 	VoyageModel     string `gorm:"size:60" json:"voyage_model"` // e.g. voyage-3
 
+	// Razorpay (UPI AutoPay subscriptions). key_id is used client-side so it's
+	// returned; the key secret and webhook secret are server-only (never
+	// serialized).
+	RazorpayEnabled       bool   `gorm:"not null;default:false" json:"razorpay_enabled"`
+	RazorpayKeyID         string `gorm:"size:80" json:"razorpay_key_id"`
+	RazorpayKeySecret     string `gorm:"size:120" json:"-"`
+	RazorpayWebhookSecret string `gorm:"size:120" json:"-"`
+
 	// Computed (not stored): whether each secret is on file.
 	NexmoSecretSet       bool `gorm:"-" json:"nexmo_secret_set"`
 	SmsExpertPasswordSet bool `gorm:"-" json:"smsexpert_password_set"`
 	CaptchaSecretSet     bool `gorm:"-" json:"captcha_secret_set"`
 	AnthropicKeySet      bool `gorm:"-" json:"anthropic_key_set"`
 	VoyageKeySet         bool `gorm:"-" json:"voyage_key_set"`
+	RazorpaySecretSet    bool `gorm:"-" json:"razorpay_secret_set"`
+	RazorpayWebhookSet   bool `gorm:"-" json:"razorpay_webhook_set"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

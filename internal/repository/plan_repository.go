@@ -37,6 +37,20 @@ func (r *PlanRepository) FindByID(id uint) (*model.Plan, error) {
 	return &p, nil
 }
 
+// FindByRazorpayPlanID returns the plan linked to a Razorpay plan id (used by
+// the webhook to know how many credits a charge grants).
+func (r *PlanRepository) FindByRazorpayPlanID(planID string) (*model.Plan, error) {
+	var p model.Plan
+	err := r.db.Where("razorpay_plan_id = ?", planID).First(&p).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
 // Create inserts a new plan.
 func (r *PlanRepository) Create(p *model.Plan) error {
 	return r.db.Create(p).Error

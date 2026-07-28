@@ -71,6 +71,12 @@ type settingRequest struct {
 	AnthropicModel  string `json:"anthropic_model"`
 	VoyageAPIKey    string `json:"voyage_api_key"`
 	VoyageModel     string `json:"voyage_model"`
+
+	// Razorpay. Secrets are write-only; key_id is not a secret.
+	RazorpayEnabled       bool   `json:"razorpay_enabled"`
+	RazorpayKeyID         string `json:"razorpay_key_id"`
+	RazorpayKeySecret     string `json:"razorpay_key_secret"`
+	RazorpayWebhookSecret string `json:"razorpay_webhook_secret"`
 }
 
 // Get returns the app settings. GET /api/v1/admin/settings
@@ -85,6 +91,8 @@ func (h *SettingHandler) Get(c *fiber.Ctx) error {
 	s.CaptchaSecretSet = s.CaptchaSecret != ""
 	s.AnthropicKeySet = s.AnthropicAPIKey != ""
 	s.VoyageKeySet = s.VoyageAPIKey != ""
+	s.RazorpaySecretSet = s.RazorpayKeySecret != ""
+	s.RazorpayWebhookSet = s.RazorpayWebhookSecret != ""
 	return c.JSON(fiber.Map{"success": true, "settings": s})
 }
 
@@ -171,6 +179,16 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 		s.VoyageAPIKey = strings.TrimSpace(req.VoyageAPIKey)
 	}
 
+	// Razorpay. key_id is not a secret; the two secrets only overwrite when set.
+	s.RazorpayEnabled = req.RazorpayEnabled
+	s.RazorpayKeyID = strings.TrimSpace(req.RazorpayKeyID)
+	if strings.TrimSpace(req.RazorpayKeySecret) != "" {
+		s.RazorpayKeySecret = strings.TrimSpace(req.RazorpayKeySecret)
+	}
+	if strings.TrimSpace(req.RazorpayWebhookSecret) != "" {
+		s.RazorpayWebhookSecret = strings.TrimSpace(req.RazorpayWebhookSecret)
+	}
+
 	if err := h.settings.Save(s); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to save settings")
 	}
@@ -180,6 +198,8 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.CaptchaSecretSet = s.CaptchaSecret != ""
 	s.AnthropicKeySet = s.AnthropicAPIKey != ""
 	s.VoyageKeySet = s.VoyageAPIKey != ""
+	s.RazorpaySecretSet = s.RazorpayKeySecret != ""
+	s.RazorpayWebhookSet = s.RazorpayWebhookSecret != ""
 	return c.JSON(fiber.Map{"success": true, "settings": s})
 }
 

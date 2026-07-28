@@ -29,6 +29,7 @@ type Config struct {
 	JWT      JWTConfig
 	SMTP     SMTPConfig
 	AI       AIConfig
+	Razorpay RazorpayConfig
 }
 
 // AIConfig holds the keys and model choices for the tutoring pipeline: Claude
@@ -51,6 +52,13 @@ func (a AIConfig) Enabled() bool { return a.AnthropicKey != "" && a.VoyageKey !=
 // keys/models set in the admin panel take effect without a restart (the DB
 // settings win over the environment fallback).
 type AIConfigFunc func() AIConfig
+
+// RazorpayConfig is the env fallback for the Razorpay keys (admin Settings win).
+type RazorpayConfig struct {
+	KeyID         string
+	KeySecret     string
+	WebhookSecret string
+}
 
 // SMTPConfig holds outgoing email (SMTP) settings. When Host is empty, email
 // sending is disabled (submissions are still saved).
@@ -164,6 +172,11 @@ func Load() Config {
 			VoyageModel:    env("VOYAGE_MODEL", "voyage-3"),
 			EmbedDim:       envInt("AI_EMBED_DIM", 1024),
 			TopK:           envInt("AI_TOP_K", 6),
+		},
+		Razorpay: RazorpayConfig{
+			KeyID:         env("RAZORPAY_KEY_ID", ""),
+			KeySecret:     env("RAZORPAY_KEY_SECRET", ""),
+			WebhookSecret: env("RAZORPAY_WEBHOOK_SECRET", ""),
 		},
 	}
 }

@@ -21,10 +21,13 @@ type Student struct {
 	PayStatus        string `gorm:"size:20;not null;default:trial" json:"pay_status"` // trial | paid | expired
 	// Credits is the student's current AI balance. Reduced as they use the AI
 	// (see credit_service). Topped up by a plan grant or a recharge.
-	Credits   int       `gorm:"not null;default:0" json:"credits"`
-	JoinedAt  time.Time `json:"joined_at"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Credits int `gorm:"not null;default:0" json:"credits"`
+	// RazorpaySubscriptionID is the active UPI AutoPay subscription (sub_...),
+	// set when the student subscribes; the webhook matches charges back to them.
+	RazorpaySubscriptionID string    `gorm:"size:60;index" json:"razorpay_subscription_id"`
+	JoinedAt               time.Time `json:"joined_at"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
 }
 
 // TableName sets the table name explicitly.

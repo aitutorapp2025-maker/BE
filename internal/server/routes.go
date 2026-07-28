@@ -6,6 +6,7 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/handler"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/middleware"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/payment"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/session"
@@ -81,6 +82,15 @@ func registerRoutes(app *fiber.App, d Deps) {
 	creditService := service.NewCreditService(creditRepo)
 	tutorHandler := handler.NewTutorHandler(tutorService, studentRepo, creditService)
 	creditHandler := handler.NewCreditHandler(creditService, studentRepo)
+
+	// Razorpay UPI-AutoPay subscriptions. Keys come from admin Settings (env
+	// fallback), read per call so changes apply without a restart.
+	razorpayProvider := service.RazorpayProvider(settingRepo, d.Cfg.Razorpay)
+	paymentService := service.NewPaymentService(
+		payment.NewClient(razorpayProvider), razorpayProvider,
+		studentRepo, planRepo, creditService,
+		repository.NewPaymentEventRepository(d.DB))
+	paymentHandler := handler.NewPaymentHandler(paymentService, d.Log)
 	legalHandler := handler.NewLegalHandler(legalRepo)
 	dashboardHandler := handler.NewDashboardHandler(dashboardRepo)
 	teachingLangHandler := handler.NewTeachingLanguageHandler(teachingLangRepo)
@@ -129,10 +139,17 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Post("/device-token", studentAuthHandler.SaveDeviceToken)
 	// Ask the AI tutor a textbook question (retrieval + Claude answer).
 	studentProtected.Post("/ask", tutorHandler.Ask)
+	// Start a UPI-AutoPay subscription (returns the Razorpay checkout link).
+	studentProtected.Post("/subscribe", paymentHandler.Subscribe)
 
 	// Public client-side error reporting (emails an alert to the admin).
 	errorReportHandler := handler.NewErrorReportHandler(d.Alerter)
 	v1.Post("/errors", errorReportHandler.Report)
+
+	// Razorpay subscription webhook — PUBLIC + plaintext by necessity (called by
+	// Razorpay's servers, which can't do our E2E handshake). Authenticated by the
+	// HMAC-SHA256 signature in X-Razorpay-Signature, verified in the handler.
+	v1.Post("/payments/webhook", paymentHandler.Webhook)
 
 	// Dev-only: simulate a server error to test error alerting.
 	if !d.Cfg.IsProduction() {
