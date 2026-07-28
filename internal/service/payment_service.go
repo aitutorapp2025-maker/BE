@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/config"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/payment"
@@ -78,8 +79,15 @@ func (s *PaymentService) CreateSubscription(studentID, planID uint) (*SubscribeR
 	if strings.TrimSpace(plan.RazorpayPlanID) == "" {
 		return nil, fmt.Errorf("this plan isn't linked to Razorpay yet")
 	}
+	// Schedule the first charge for the trial's end so the mandate is authorized
+	// now (₹1 UPI-AutoPay confirmation) and the base plan only auto-debits after
+	// the trial. If the trial has passed (or isn't set), charge immediately.
+	var startAt int64
+	if st.TrialEndsAt != nil && st.TrialEndsAt.After(time.Now()) {
+		startAt = st.TrialEndsAt.Unix()
+	}
 	// Authorize 12 cycles by default; the mandate can be renewed later.
-	sub, err := s.client.CreateSubscription(plan.RazorpayPlanID, 12*plan.DurationDays/30)
+	sub, err := s.client.CreateSubscription(plan.RazorpayPlanID, 12*plan.DurationDays/30, startAt)
 	if err != nil {
 		return nil, err
 	}

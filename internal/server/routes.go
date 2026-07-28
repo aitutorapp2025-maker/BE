@@ -57,7 +57,10 @@ func registerRoutes(app *fiber.App, d Deps) {
 	)
 	sessStore := session.New(d.Redis, d.Cfg.JWT.RefreshTTL)
 	authService := service.NewAuthService(adminRepo, sessStore, d.Cfg)
-	studentAuthService := service.NewStudentAuthService(studentRepo, deviceTokenRepo, sessStore, smsPublisher, d.Cfg)
+	creditService := service.NewCreditService(creditRepo)
+	// New students get their free trial (plan + credits) on first login.
+	studentAuthService := service.NewStudentAuthService(
+		studentRepo, deviceTokenRepo, sessStore, smsPublisher, d.Cfg, planRepo, creditService)
 
 	healthHandler := handler.NewHealthHandler(d.DB, d.Redis, d.MQ)
 	adminAuthHandler := handler.NewAdminAuthHandler(authService, adminRepo)
@@ -79,7 +82,6 @@ func registerRoutes(app *fiber.App, d Deps) {
 	contactHandler := handler.NewContactHandler(contactRepo, settingRepo, emailPublisher, smsPublisher, d.Log)
 	handshakeHandler := handler.NewHandshakeHandler(sessStore)
 	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo)
-	creditService := service.NewCreditService(creditRepo)
 	tutorHandler := handler.NewTutorHandler(tutorService, studentRepo, creditService)
 	creditHandler := handler.NewCreditHandler(creditService, studentRepo)
 

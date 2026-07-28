@@ -219,7 +219,7 @@ func SeedPlans(db *gorm.DB) (int, error) {
 		return 0, nil
 	}
 	plans := append([]model.Plan{
-		{Name: "Free Trial", PriceRupees: 0, DurationDays: 7, Credits: 20,
+		{Name: "Free Trial", PriceRupees: 0, DurationDays: 7, Credits: 20, IsTrial: true,
 			Tagline: "7 days full access", BestValue: false,
 			Features: []string{"All subjects & features", "No card required",
 				"Converts to paywall after 7 days"}},
@@ -248,6 +248,24 @@ func starterPaidPlans() []model.Plan {
 			Features: []string{"Everything in Pro", "Highest AI credits",
 				"Best for exam prep", "Priority support"}},
 	}
+}
+
+// EnsureTrialPlan makes sure exactly one plan is flagged as the trial. On an
+// older DB (seeded before is_trial existed) it flags the "Free Trial" plan.
+// Non-destructive: does nothing if a trial plan already exists.
+func EnsureTrialPlan(db *gorm.DB) error {
+	var count int64
+	if err := db.Model(&model.Plan{}).Where("is_trial = ?", true).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	// Flag the free (price 0) plan named like a trial, else the cheapest free one.
+	return db.Model(&model.Plan{}).
+		Where("price_rupees = 0").
+		Where("LOWER(name) LIKE ?", "%trial%").
+		Update("is_trial", true).Error
 }
 
 // EnsureStarterPlans inserts the three paid tiers by name if they're missing.

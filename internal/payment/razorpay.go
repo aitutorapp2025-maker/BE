@@ -48,6 +48,10 @@ type createSubReq struct {
 	PlanID         string `json:"plan_id"`
 	TotalCount     int    `json:"total_count"`
 	CustomerNotify int    `json:"customer_notify"`
+	// StartAt (unix seconds) delays the first real charge until the trial ends,
+	// so the mandate is authorized now (₹1 UPI-AutoPay confirmation) but the base
+	// plan only auto-debits after the trial. Omitted when 0.
+	StartAt int64 `json:"start_at,omitempty"`
 }
 
 // Subscription is the subset of the Razorpay response we use.
@@ -59,8 +63,9 @@ type Subscription struct {
 
 // CreateSubscription creates a recurring UPI-AutoPay subscription for a plan.
 // totalCount is how many billing cycles to authorize (e.g. 12 for a year of
-// monthly). Returns the subscription id + the hosted checkout short URL.
-func (c *Client) CreateSubscription(planID string, totalCount int) (*Subscription, error) {
+// monthly). startAt (unix seconds, 0 = now) delays the first charge to the trial
+// end. Returns the subscription id + the hosted checkout short URL.
+func (c *Client) CreateSubscription(planID string, totalCount int, startAt int64) (*Subscription, error) {
 	cfg := c.cfg()
 	if !cfg.Enabled() {
 		return nil, fmt.Errorf("razorpay is not configured (set the keys in admin Settings)")
@@ -68,7 +73,7 @@ func (c *Client) CreateSubscription(planID string, totalCount int) (*Subscriptio
 	if totalCount <= 0 {
 		totalCount = 12
 	}
-	body, _ := json.Marshal(createSubReq{PlanID: planID, TotalCount: totalCount, CustomerNotify: 1})
+	body, _ := json.Marshal(createSubReq{PlanID: planID, TotalCount: totalCount, CustomerNotify: 1, StartAt: startAt})
 	req, err := http.NewRequest(http.MethodPost, subscriptionsURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err

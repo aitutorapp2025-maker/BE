@@ -91,6 +91,10 @@ func main() {
 	} else if n > 0 {
 		log.Infof("added %d starter plans (₹799/₹999/₹1299)", n)
 	}
+	// Ensure one trial plan is flagged (for the onboarding default).
+	if err := database.EnsureTrialPlan(db); err != nil {
+		log.Fatalf("ensure trial plan: %v", err)
+	}
 	if seeded, err := database.SeedSettings(db); err != nil {
 		log.Fatalf("seed settings: %v", err)
 	} else if seeded {

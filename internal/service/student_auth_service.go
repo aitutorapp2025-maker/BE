@@ -38,18 +38,47 @@ type StudentAuthService struct {
 	sessions *session.Store
 	sms      *sms.Publisher
 	cfg      config.Config
+	// plans + credits give a new student their free trial on first login.
+	plans   *repository.PlanRepository
+	credits *CreditService
 }
 
 // NewStudentAuthService builds a StudentAuthService.
 func NewStudentAuthService(students *repository.StudentRepository,
 	devices *repository.DeviceTokenRepository, sessions *session.Store,
-	smsPub *sms.Publisher, cfg config.Config) *StudentAuthService {
+	smsPub *sms.Publisher, cfg config.Config,
+	plans *repository.PlanRepository, credits *CreditService) *StudentAuthService {
 	return &StudentAuthService{
 		students: students,
 		devices:  devices,
 		sessions: sessions,
 		sms:      smsPub,
 		cfg:      cfg,
+		plans:    plans,
+		credits:  credits,
+	}
+}
+
+// grantTrial puts a brand-new student on the free-trial plan: it stamps the
+// trial expiry and credits the trial's allowance. Best-effort — if no trial
+// plan is configured the student is still created (with no trial credits).
+func (s *StudentAuthService) grantTrial(student *model.Student) {
+	trial, err := s.plans.FindTrial()
+	if err != nil {
+		return
+	}
+	days := trial.DurationDays
+	if days <= 0 {
+		days = 7
+	}
+	ends := time.Now().Add(time.Duration(days) * 24 * time.Hour)
+	student.Plan = trial.Name
+	student.PayStatus = "trial"
+	student.TrialEndsAt = &ends
+	_ = s.students.Update(student)
+	if trial.Credits > 0 {
+		_, _ = s.credits.Grant(int(student.ID), trial.Credits, 0, "grant",
+			fmt.Sprintf("Free trial (%d days)", days))
 	}
 }
 
@@ -152,6 +181,8 @@ func (s *StudentAuthService) VerifyOTP(ctx context.Context, phone, code, deviceT
 		if err := s.students.Create(student); err != nil {
 			return nil, err
 		}
+		// New student → default them onto the free-trial plan + credits.
+		s.grantTrial(student)
 		isNew = true
 	case err != nil:
 		return nil, err

@@ -24,10 +24,13 @@ type Student struct {
 	Credits int `gorm:"not null;default:0" json:"credits"`
 	// RazorpaySubscriptionID is the active UPI AutoPay subscription (sub_...),
 	// set when the student subscribes; the webhook matches charges back to them.
-	RazorpaySubscriptionID string    `gorm:"size:60;index" json:"razorpay_subscription_id"`
-	JoinedAt               time.Time `json:"joined_at"`
-	CreatedAt              time.Time `json:"created_at"`
-	UpdatedAt              time.Time `json:"updated_at"`
+	RazorpaySubscriptionID string `gorm:"size:60;index" json:"razorpay_subscription_id"`
+	// TrialEndsAt is when the free trial expires. The base-plan subscription is
+	// scheduled to auto-debit at this time (Razorpay start_at).
+	TrialEndsAt *time.Time `json:"trial_ends_at"`
+	JoinedAt    time.Time  `json:"joined_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 // TableName sets the table name explicitly.

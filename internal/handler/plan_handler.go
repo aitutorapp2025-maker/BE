@@ -27,6 +27,7 @@ type planRequest struct {
 	Features       []string `json:"features"`
 	BestValue      bool     `json:"best_value"`
 	Credits        int      `json:"credits"`
+	IsTrial        bool     `json:"is_trial"`
 	RazorpayPlanID string   `json:"razorpay_plan_id"`
 }
 
@@ -72,7 +73,7 @@ func (h *PlanHandler) Create(c *fiber.Ctx) error {
 		Name: req.Name, PriceRupees: req.PriceRupees, MrpRupees: req.MrpRupees,
 		DurationDays: req.DurationDays, Tagline: req.Tagline,
 		Features: req.Features, BestValue: req.BestValue, Credits: req.Credits,
-		RazorpayPlanID: strings.TrimSpace(req.RazorpayPlanID),
+		IsTrial: req.IsTrial, RazorpayPlanID: strings.TrimSpace(req.RazorpayPlanID),
 	}
 	if err := h.plans.Create(p); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to create plan")
@@ -102,6 +103,7 @@ func (h *PlanHandler) Update(c *fiber.Ctx) error {
 	p.Features = req.Features
 	p.BestValue = req.BestValue
 	p.Credits = req.Credits
+	p.IsTrial = req.IsTrial
 	p.RazorpayPlanID = strings.TrimSpace(req.RazorpayPlanID)
 	if err := h.plans.Update(p); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to update plan")

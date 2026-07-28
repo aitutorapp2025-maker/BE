@@ -13,6 +13,10 @@ type Plan struct {
 	// sizing credits at 15% of PriceRupees guarantees ≥85% gross margin even if
 	// a student spends every credit (see internal/service/credit_service.go).
 	Credits int `gorm:"not null;default:0" json:"credits"`
+	// IsTrial marks the free-trial plan that new students get on onboarding.
+	// Admin controls the trial length (DurationDays) and credits (Credits) by
+	// editing this plan. There should be exactly one trial plan.
+	IsTrial bool `gorm:"not null;default:false" json:"is_trial"`
 	// RazorpayPlanID links this tier to a Razorpay plan (plan_...) for UPI
 	// AutoPay subscriptions. Blank = not sold via Razorpay.
 	RazorpayPlanID string    `gorm:"size:60" json:"razorpay_plan_id"`

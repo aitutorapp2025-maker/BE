@@ -37,6 +37,20 @@ func (r *PlanRepository) FindByID(id uint) (*model.Plan, error) {
 	return &p, nil
 }
 
+// FindTrial returns the free-trial plan (the one flagged is_trial). Used to
+// give new students their trial on onboarding.
+func (r *PlanRepository) FindTrial() (*model.Plan, error) {
+	var p model.Plan
+	err := r.db.Where("is_trial = ?", true).Order("id ASC").First(&p).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
 // FindByRazorpayPlanID returns the plan linked to a Razorpay plan id (used by
 // the webhook to know how many credits a charge grants).
 func (r *PlanRepository) FindByRazorpayPlanID(planID string) (*model.Plan, error) {
