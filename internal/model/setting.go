@@ -4,12 +4,12 @@ import "time"
 
 // Setting is the single-row application settings record (id is always 1).
 type Setting struct {
-	ID                 uint      `gorm:"primaryKey" json:"id"`
-	AppName            string    `gorm:"size:120;not null;default:'Vaha AI'" json:"app_name"`
-	SupportEmail       string    `gorm:"size:190" json:"support_email"`
-	EmailNotifications bool      `gorm:"not null;default:true" json:"email_notifications"`
-	AutoApproveAnswers bool      `gorm:"not null;default:false" json:"auto_approve_answers"`
-	MaintenanceMode    bool      `gorm:"not null;default:false" json:"maintenance_mode"`
+	ID                 uint   `gorm:"primaryKey" json:"id"`
+	AppName            string `gorm:"size:120;not null;default:'Vaha AI'" json:"app_name"`
+	SupportEmail       string `gorm:"size:190" json:"support_email"`
+	EmailNotifications bool   `gorm:"not null;default:true" json:"email_notifications"`
+	AutoApproveAnswers bool   `gorm:"not null;default:false" json:"auto_approve_answers"`
+	MaintenanceMode    bool   `gorm:"not null;default:false" json:"maintenance_mode"`
 
 	// Outgoing email (SMTP). Password is never serialized to the client.
 	SmtpEnabled  bool   `gorm:"not null;default:false" json:"smtp_enabled"`
@@ -53,10 +53,19 @@ type Setting struct {
 	CaptchaSiteKey  string `gorm:"size:190" json:"captcha_site_key"`
 	CaptchaSecret   string `gorm:"size:190" json:"-"`
 
+	// AI tutor (RAG). Keys are never serialized to the client; model names are.
+	AIEnabled       bool   `gorm:"not null;default:false" json:"ai_enabled"`
+	AnthropicAPIKey string `gorm:"size:255" json:"-"`
+	AnthropicModel  string `gorm:"size:60" json:"anthropic_model"` // e.g. claude-sonnet-5
+	VoyageAPIKey    string `gorm:"size:255" json:"-"`
+	VoyageModel     string `gorm:"size:60" json:"voyage_model"` // e.g. voyage-3
+
 	// Computed (not stored): whether each secret is on file.
 	NexmoSecretSet       bool `gorm:"-" json:"nexmo_secret_set"`
 	SmsExpertPasswordSet bool `gorm:"-" json:"smsexpert_password_set"`
 	CaptchaSecretSet     bool `gorm:"-" json:"captcha_secret_set"`
+	AnthropicKeySet      bool `gorm:"-" json:"anthropic_key_set"`
+	VoyageKeySet         bool `gorm:"-" json:"voyage_key_set"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

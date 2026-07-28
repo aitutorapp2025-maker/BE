@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"strings"
+	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/email"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
@@ -14,11 +16,14 @@ type SettingHandler struct {
 	settings *repository.SettingRepository
 	mailer   *email.Publisher
 	smser    *sms.Publisher
+	// aiProbe verifies the configured AI keys (Voyage + Claude). nil when the
+	// tutoring pipeline isn't wired (e.g. pgvector missing).
+	aiProbe func(context.Context) error
 }
 
-// NewSettingHandler builds a SettingHandler.
-func NewSettingHandler(settings *repository.SettingRepository, mailer *email.Publisher, smser *sms.Publisher) *SettingHandler {
-	return &SettingHandler{settings: settings, mailer: mailer, smser: smser}
+// NewSettingHandler builds a SettingHandler. aiProbe may be nil.
+func NewSettingHandler(settings *repository.SettingRepository, mailer *email.Publisher, smser *sms.Publisher, aiProbe func(context.Context) error) *SettingHandler {
+	return &SettingHandler{settings: settings, mailer: mailer, smser: smser, aiProbe: aiProbe}
 }
 
 type settingRequest struct {
@@ -59,6 +64,13 @@ type settingRequest struct {
 	CaptchaProvider string `json:"captcha_provider"`
 	CaptchaSiteKey  string `json:"captcha_site_key"`
 	CaptchaSecret   string `json:"captcha_secret"`
+
+	// AI tutor. Keys are write-only: empty means "keep the existing one".
+	AIEnabled       bool   `json:"ai_enabled"`
+	AnthropicAPIKey string `json:"anthropic_api_key"`
+	AnthropicModel  string `json:"anthropic_model"`
+	VoyageAPIKey    string `json:"voyage_api_key"`
+	VoyageModel     string `json:"voyage_model"`
 }
 
 // Get returns the app settings. GET /api/v1/admin/settings
@@ -71,6 +83,8 @@ func (h *SettingHandler) Get(c *fiber.Ctx) error {
 	s.NexmoSecretSet = s.NexmoAPISecret != ""
 	s.SmsExpertPasswordSet = s.SmsExpertPassword != ""
 	s.CaptchaSecretSet = s.CaptchaSecret != ""
+	s.AnthropicKeySet = s.AnthropicAPIKey != ""
+	s.VoyageKeySet = s.VoyageAPIKey != ""
 	return c.JSON(fiber.Map{"success": true, "settings": s})
 }
 
@@ -142,6 +156,21 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 		s.CaptchaSecret = req.CaptchaSecret
 	}
 
+	// AI tutor. Keys are write-only (overwrite only when a new one is given).
+	s.AIEnabled = req.AIEnabled
+	if m := strings.TrimSpace(req.AnthropicModel); m != "" {
+		s.AnthropicModel = m
+	}
+	if m := strings.TrimSpace(req.VoyageModel); m != "" {
+		s.VoyageModel = m
+	}
+	if strings.TrimSpace(req.AnthropicAPIKey) != "" {
+		s.AnthropicAPIKey = strings.TrimSpace(req.AnthropicAPIKey)
+	}
+	if strings.TrimSpace(req.VoyageAPIKey) != "" {
+		s.VoyageAPIKey = strings.TrimSpace(req.VoyageAPIKey)
+	}
+
 	if err := h.settings.Save(s); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to save settings")
 	}
@@ -149,7 +178,24 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.NexmoSecretSet = s.NexmoAPISecret != ""
 	s.SmsExpertPasswordSet = s.SmsExpertPassword != ""
 	s.CaptchaSecretSet = s.CaptchaSecret != ""
+	s.AnthropicKeySet = s.AnthropicAPIKey != ""
+	s.VoyageKeySet = s.VoyageAPIKey != ""
 	return c.JSON(fiber.Map{"success": true, "settings": s})
+}
+
+// TestAI verifies the configured AI keys with a tiny Voyage + Claude round-trip.
+// POST /api/v1/admin/settings/test-ai
+func (h *SettingHandler) TestAI(c *fiber.Ctx) error {
+	if h.aiProbe == nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable,
+			"AI tutoring is not available on this server (pgvector not installed)")
+	}
+	ctx, cancel := context.WithTimeout(c.Context(), 30*time.Second)
+	defer cancel()
+	if err := h.aiProbe(ctx); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "AI test failed — "+err.Error())
+	}
+	return c.JSON(fiber.Map{"success": true, "message": "AI keys are working (Voyage + Claude reachable)."})
 }
 
 type testEmailRequest struct {

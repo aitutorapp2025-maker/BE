@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/ai"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/alert"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/cache"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/config"
@@ -41,6 +42,19 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 	log.Infof("database migrated")
+
+	// Vector store for the tutoring pipeline — only if pgvector is installed on
+	// the PostgreSQL server. When it isn't, the AI features stay off but the app
+	// still boots (the worker/route degrade to a clear "not configured" error).
+	vectorsReady, err := database.MigrateVectors(db)
+	if err != nil {
+		log.Fatalf("migrate vectors: %v", err)
+	}
+	if vectorsReady {
+		log.Infof("pgvector ready (book_chunks migrated)")
+	} else {
+		log.Infof("pgvector NOT installed — tutoring/RAG features disabled")
+	}
 	if seeded, err := database.SeedAdmin(db); err != nil {
 		log.Fatalf("seed admin: %v", err)
 	} else if seeded {
@@ -138,6 +152,28 @@ func main() {
 		log.Infof("email worker started (SMTP enabled)")
 	} else {
 		log.Infof("email worker started (SMTP disabled — configure it in admin settings)")
+	}
+
+	// Background book-ingestion worker — embeds uploaded textbooks into the
+	// vector store. Started whenever pgvector is ready; the AI keys are read per
+	// call from the admin Settings (env as fallback), so they can be added later
+	// without a restart.
+	if vectorsReady {
+		aiProvider := service.AIProvider(settingRepo, cfg.AI)
+		bookRepo := repository.NewBookRepository(db)
+		bookChunkRepo := repository.NewBookChunkRepository(db)
+		tutorService := service.NewTutorService(
+			bookRepo, bookChunkRepo,
+			ai.NewEmbedder(aiProvider),
+			ai.NewChat(aiProvider),
+			cfg.AI.TopK,
+		)
+		if err := worker.StartIngestWorker(mq, tutorService, alerter, log); err != nil {
+			log.Fatalf("ingest worker: %v", err)
+		}
+		log.Infof("book ingestion worker started (AI keys via admin Settings / env)")
+	} else {
+		log.Infof("tutoring pipeline disabled (install pgvector to enable)")
 	}
 
 	// ── HTTP server ──────────────────────────────────────────────────────

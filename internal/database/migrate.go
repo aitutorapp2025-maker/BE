@@ -40,6 +40,22 @@ func Migrate(db *gorm.DB) error {
 	)
 }
 
+// MigrateVectors enables the pgvector extension and migrates the book_chunks
+// table (which has a `vector` column). It's separate from Migrate because it
+// depends on the pgvector extension being installed on the PostgreSQL server —
+// if it isn't, the AI/tutoring features stay off but the rest of the app boots
+// normally. Returns false (not an error) when pgvector is unavailable.
+func MigrateVectors(db *gorm.DB) (bool, error) {
+	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
+		// Extension not installed on the server — skip vector features gracefully.
+		return false, nil
+	}
+	if err := db.AutoMigrate(&model.BookChunk{}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // SeedTeachingLanguages inserts the default teaching languages if none exist.
 func SeedTeachingLanguages(db *gorm.DB) (int, error) {
 	var count int64

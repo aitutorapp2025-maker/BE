@@ -28,7 +28,29 @@ type Config struct {
 	RabbitMQ RabbitMQConfig
 	JWT      JWTConfig
 	SMTP     SMTPConfig
+	AI       AIConfig
 }
+
+// AIConfig holds the keys and model choices for the tutoring pipeline: Claude
+// (answer generation) and Voyage (text embeddings for retrieval). When the keys
+// are empty the AI features stay disabled and the rest of the app runs normally.
+type AIConfig struct {
+	AnthropicKey   string
+	AnthropicModel string // e.g. claude-sonnet-5
+	VoyageKey      string
+	VoyageModel    string // e.g. voyage-3
+	EmbedDim       int    // embedding dimension (must match the vector column)
+	// TopK is how many textbook passages to retrieve per question.
+	TopK int
+}
+
+// Enabled reports whether the tutoring pipeline has the keys it needs.
+func (a AIConfig) Enabled() bool { return a.AnthropicKey != "" && a.VoyageKey != "" }
+
+// AIConfigFunc returns the current AI configuration. It's evaluated per-call so
+// keys/models set in the admin panel take effect without a restart (the DB
+// settings win over the environment fallback).
+type AIConfigFunc func() AIConfig
 
 // SMTPConfig holds outgoing email (SMTP) settings. When Host is empty, email
 // sending is disabled (submissions are still saved).
@@ -134,6 +156,14 @@ func Load() Config {
 			Password: env("SMTP_PASSWORD", ""),
 			From:     env("SMTP_FROM", "support@vahaai.com"),
 			FromName: env("SMTP_FROM_NAME", "Vaha AI"),
+		},
+		AI: AIConfig{
+			AnthropicKey:   env("ANTHROPIC_API_KEY", ""),
+			AnthropicModel: env("ANTHROPIC_MODEL", "claude-sonnet-5"),
+			VoyageKey:      env("VOYAGE_API_KEY", ""),
+			VoyageModel:    env("VOYAGE_MODEL", "voyage-3"),
+			EmbedDim:       envInt("AI_EMBED_DIM", 1024),
+			TopK:           envInt("AI_TOP_K", 6),
 		},
 	}
 }

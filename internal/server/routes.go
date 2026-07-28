@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/ai"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/email"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/handler"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/middleware"
@@ -21,6 +22,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	classRepo := repository.NewClassRepository(d.DB)
 	classGroupRepo := repository.NewClassGroupRepository(d.DB)
 	bookRepo := repository.NewBookRepository(d.DB)
+	bookChunkRepo := repository.NewBookChunkRepository(d.DB)
 	planRepo := repository.NewPlanRepository(d.DB)
 	settingRepo := repository.NewSettingRepository(d.DB)
 	deviceTokenRepo := repository.NewDeviceTokenRepository(d.DB)
@@ -39,6 +41,18 @@ func registerRoutes(app *fiber.App, d Deps) {
 
 	emailPublisher := email.NewPublisher(d.MQ, func() bool { return d.SMTP().Enabled() })
 	smsPublisher := sms.NewPublisher(d.MQ, func() bool { return d.SMS().Usable() })
+	// AI config is read from the DB (admin Settings) with the env as fallback,
+	// so keys can be changed at runtime.
+	aiProvider := service.AIProvider(settingRepo, d.Cfg.AI)
+	ingestPublisher := ai.NewIngestPublisher(d.MQ, func() bool { return aiProvider().Enabled() })
+	// Tutoring (RAG) pipeline: Voyage embeddings + Claude answers. Keys are read
+	// per call from aiProvider (DB settings → env fallback).
+	tutorService := service.NewTutorService(
+		bookRepo, bookChunkRepo,
+		ai.NewEmbedder(aiProvider),
+		ai.NewChat(aiProvider),
+		d.Cfg.AI.TopK,
+	)
 	sessStore := session.New(d.Redis, d.Cfg.JWT.RefreshTTL)
 	authService := service.NewAuthService(adminRepo, sessStore, d.Cfg)
 	studentAuthService := service.NewStudentAuthService(studentRepo, deviceTokenRepo, sessStore, smsPublisher, d.Cfg)
@@ -48,9 +62,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentHandler := handler.NewStudentHandler(studentRepo)
 	classHandler := handler.NewClassHandler(classRepo, classGroupRepo)
 	classGroupHandler := handler.NewClassGroupHandler(classGroupRepo)
-	bookHandler := handler.NewBookHandler(bookRepo)
+	bookHandler := handler.NewBookHandler(bookRepo, ingestPublisher)
 	planHandler := handler.NewPlanHandler(planRepo)
-	settingHandler := handler.NewSettingHandler(settingRepo, emailPublisher, smsPublisher)
+	settingHandler := handler.NewSettingHandler(settingRepo, emailPublisher, smsPublisher, tutorService.Probe)
 
 	landingHandler := handler.NewLandingHandler(
 		navRepo, statRepo, featureRepo, testimonialRepo, faqRepo, landingTextRepo, settingRepo)
@@ -63,6 +77,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	contactHandler := handler.NewContactHandler(contactRepo, settingRepo, emailPublisher, smsPublisher, d.Log)
 	handshakeHandler := handler.NewHandshakeHandler(sessStore)
 	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo)
+	tutorHandler := handler.NewTutorHandler(tutorService, studentRepo)
 	legalHandler := handler.NewLegalHandler(legalRepo)
 	dashboardHandler := handler.NewDashboardHandler(dashboardRepo)
 	teachingLangHandler := handler.NewTeachingLanguageHandler(teachingLangRepo)
@@ -107,6 +122,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Get("/me", studentAuthHandler.Me)
 	studentProtected.Put("/profile", studentAuthHandler.UpdateProfile)
 	studentProtected.Post("/device-token", studentAuthHandler.SaveDeviceToken)
+	// Ask the AI tutor a textbook question (retrieval + Claude answer).
+	studentProtected.Post("/ask", tutorHandler.Ask)
 
 	// Public client-side error reporting (emails an alert to the admin).
 	errorReportHandler := handler.NewErrorReportHandler(d.Alerter)
@@ -172,6 +189,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	books.Get("/:id", bookHandler.Get)
 	books.Put("/:id", bookHandler.Update)
 	books.Delete("/:id", bookHandler.Delete)
+	// Index a book's text into the vector store for retrieval.
+	books.Post("/:id/ingest", bookHandler.Ingest)
 
 	// Plans CRUD.
 	plans := adminProtected.Group("/plans")
@@ -186,6 +205,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	adminProtected.Put("/settings", settingHandler.Update)
 	adminProtected.Post("/settings/test-email", settingHandler.TestEmail)
 	adminProtected.Post("/settings/test-sms", settingHandler.TestSMS)
+	adminProtected.Post("/settings/test-ai", settingHandler.TestAI)
 
 	// Legal documents (Terms & Conditions, etc.) — admin editing.
 	adminProtected.Get("/legal/:key", legalHandler.Get)
