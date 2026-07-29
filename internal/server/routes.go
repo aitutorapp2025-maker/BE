@@ -81,7 +81,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	faqCrud := handler.NewLandingCrudHandler[model.LandingFaq, *model.LandingFaq](faqRepo, "faq")
 	landingTextHandler := handler.NewLandingTextHandler(landingTextRepo)
 	landingSeoHandler := handler.NewLandingSeoHandler(landingSeoRepo)
-	landingUploadHandler := handler.NewLandingUploadHandler(
+	uploadHandler := handler.NewAssetUploadHandler(
 		d.Cfg.Uploads.Dir, d.Cfg.Uploads.PublicBaseURL)
 	contactHandler := handler.NewContactHandler(contactRepo, settingRepo, emailPublisher, smsPublisher, d.Log)
 	handshakeHandler := handler.NewHandshakeHandler(sessStore)
@@ -240,6 +240,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Settings (singleton).
 	adminProtected.Get("/settings", settingHandler.Get)
 	adminProtected.Put("/settings", settingHandler.Update)
+	adminProtected.Post("/settings/logo", uploadHandler.UploadLogo)
 	adminProtected.Post("/settings/test-email", settingHandler.TestEmail)
 	adminProtected.Post("/settings/test-sms", settingHandler.TestSMS)
 	adminProtected.Post("/settings/test-ai", settingHandler.TestAI)
@@ -267,7 +268,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	landing.Put("/text", landingTextHandler.Update)
 	landing.Get("/seo", landingSeoHandler.Get)
 	landing.Put("/seo", landingSeoHandler.Update)
-	landing.Post("/seo/og-image", landingUploadHandler.UploadOgImage)
+	landing.Post("/seo/og-image", uploadHandler.UploadOgImage)
 	registerLandingCrud(landing, "nav", navCrud.List, navCrud.Create, navCrud.Update, navCrud.Delete)
 	registerLandingCrud(landing, "stats", statCrud.List, statCrud.Create, statCrud.Update, statCrud.Delete)
 	registerLandingCrud(landing, "features", featureCrud.List, featureCrud.Create, featureCrud.Update, featureCrud.Delete)

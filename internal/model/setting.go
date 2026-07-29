@@ -7,6 +7,7 @@ type Setting struct {
 	ID                 uint   `gorm:"primaryKey" json:"id"`
 	AppName            string `gorm:"size:120;not null;default:'Vaha AI'" json:"app_name"`
 	SupportEmail       string `gorm:"size:190" json:"support_email"`
+	LogoURL            string `gorm:"size:400" json:"logo_url"` // organisation logo (uploaded asset URL)
 	EmailNotifications bool   `gorm:"not null;default:true" json:"email_notifications"`
 	AutoApproveAnswers bool   `gorm:"not null;default:false" json:"auto_approve_answers"`
 	MaintenanceMode    bool   `gorm:"not null;default:false" json:"maintenance_mode"`

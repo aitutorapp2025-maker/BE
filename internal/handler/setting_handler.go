@@ -29,6 +29,7 @@ func NewSettingHandler(settings *repository.SettingRepository, mailer *email.Pub
 type settingRequest struct {
 	AppName            string `json:"app_name"`
 	SupportEmail       string `json:"support_email"`
+	LogoURL            string `json:"logo_url"`
 	EmailNotifications bool   `json:"email_notifications"`
 	AutoApproveAnswers bool   `json:"auto_approve_answers"`
 	MaintenanceMode    bool   `json:"maintenance_mode"`
@@ -113,6 +114,7 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 		s.AppName = req.AppName
 	}
 	s.SupportEmail = strings.TrimSpace(req.SupportEmail)
+	s.LogoURL = strings.TrimSpace(req.LogoURL)
 	s.EmailNotifications = req.EmailNotifications
 	s.AutoApproveAnswers = req.AutoApproveAnswers
 	s.MaintenanceMode = req.MaintenanceMode
