@@ -3,8 +3,11 @@
 package server
 
 import (
+	"encoding/json"
+
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/alert"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/config"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/cryptox"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/email"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/queue"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/sms"
@@ -57,7 +60,9 @@ func New(d Deps) *fiber.App {
 }
 
 // errorHandler renders errors as a consistent JSON envelope and emails an alert
-// for server errors (5xx).
+// for server errors (5xx). When the request carried an E2E session key (stashed
+// by the Encrypt middleware), the error body is encrypted too, so nothing is
+// readable on the wire — matching the success responses.
 func errorHandler(alerter *alert.Alerter, log *logger.Logger) fiber.ErrorHandler {
 	return func(c *fiber.Ctx, err error) error {
 		code := fiber.StatusInternalServerError
@@ -68,9 +73,21 @@ func errorHandler(alerter *alert.Alerter, log *logger.Logger) fiber.ErrorHandler
 			log.Errorf("%s %s -> %d: %v", c.Method(), c.Path(), code, err)
 			alerter.NotifyError(c.Method(), c.Path(), err.Error())
 		}
-		return c.Status(code).JSON(fiber.Map{
-			"success": false,
-			"error":   err.Error(),
-		})
+
+		payload := fiber.Map{"success": false, "error": err.Error()}
+
+		// Encrypt the error too when an E2E key was resolved for this request.
+		if key, ok := c.Locals("enckey").([]byte); ok && len(key) > 0 {
+			if raw, merr := json.Marshal(payload); merr == nil {
+				if enc, eerr := cryptox.Encrypt(key, raw); eerr == nil {
+					c.Status(code)
+					c.Set("X-Encrypted", "1")
+					c.Response().Header.SetContentType(fiber.MIMEApplicationJSON)
+					return c.Send(enc)
+				}
+			}
+		}
+
+		return c.Status(code).JSON(payload)
 	}
 }

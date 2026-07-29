@@ -27,6 +27,10 @@ func Encrypt(store *session.Store) fiber.Handler {
 			return c.Next() // no key — pass through in the clear
 		}
 
+		// Expose the key to the app ErrorHandler so it can encrypt error
+		// responses too (this middleware only encrypts the success path below).
+		c.Locals("enckey", key)
+
 		// Decrypt the request body.
 		if c.Get("X-Encrypted") == "1" && len(c.Body()) > 0 {
 			plain, derr := cryptox.Decrypt(key, c.Body())
