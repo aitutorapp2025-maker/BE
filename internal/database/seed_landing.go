@@ -170,6 +170,7 @@ func SeedLanding(db *gorm.DB) (bool, error) {
 	if seoBlank {
 		seo := model.LandingSeo{
 			ID:              1,
+			SiteDomain:      "https://vahaai.com",
 			MetaTitle:       "Vaha AI — Personal AI Tutor for Class 1–12",
 			MetaDescription: "Vaha AI is your child's personal AI tutor — homework explained from their own textbooks, daily study plans, oral & written tests, and weekly parent reports. Tamil & English medium.",
 			MetaKeywords:    "AI tutor, homework help, Samacheer, State Board, CBSE, ICSE, Tamil medium, English medium, online tuition, Class 1-12",

@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"html"
+	"strings"
+
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/gofiber/fiber/v2"
@@ -153,6 +156,91 @@ func (h *LandingSeoHandler) Update(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to save SEO")
 	}
 	return c.JSON(fiber.Map{"success": true, "seo": existing})
+}
+
+// MetaHTML renders the landing SEO as a ready-to-inject HTML <head> fragment
+// (title + meta/link tags). It is PLAIN (not E2E-encrypted) so a hosting layer
+// (nginx SSI, a prerender service) can fetch it and inject the real tags into
+// index.html for social crawlers that don't run JavaScript.
+// GET /api/v1/landing/meta.html
+func (h *LandingSeoHandler) MetaHTML(c *fiber.Ctx) error {
+	s, err := h.repo.Get()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to load SEO")
+	}
+
+	domain := strings.TrimRight(s.SiteDomain, "/")
+	canonical := seoFirst(s.CanonicalURL, s.SiteDomain)
+	ogTitle := seoFirst(s.OgTitle, s.MetaTitle)
+	ogDesc := seoFirst(s.OgDescription, s.MetaDescription)
+	ogImage := seoResolveImage(s.OgImage, domain)
+	twImage := seoResolveImage(seoFirst(s.TwitterImage, s.OgImage), domain)
+
+	var b strings.Builder
+	if s.MetaTitle != "" {
+		b.WriteString("<title>" + html.EscapeString(s.MetaTitle) + "</title>\n")
+	}
+	seoMeta(&b, "name", "description", s.MetaDescription)
+	seoMeta(&b, "name", "keywords", s.MetaKeywords)
+	seoMeta(&b, "name", "robots", s.Robots)
+	seoMeta(&b, "name", "theme-color", s.ThemeColor)
+	if canonical != "" {
+		b.WriteString(`<link rel="canonical" href="` + html.EscapeString(canonical) + "\">\n")
+	}
+	seoMeta(&b, "property", "og:title", ogTitle)
+	seoMeta(&b, "property", "og:description", ogDesc)
+	seoMeta(&b, "property", "og:type", seoFirst(s.OgType, "website"))
+	seoMeta(&b, "property", "og:image", ogImage)
+	seoMeta(&b, "property", "og:url", seoFirst(s.OgURL, canonical))
+	seoMeta(&b, "property", "og:site_name", s.OgSiteName)
+	seoMeta(&b, "name", "twitter:card", seoFirst(s.TwitterCard, "summary_large_image"))
+	seoMeta(&b, "name", "twitter:site", s.TwitterSite)
+	seoMeta(&b, "name", "twitter:title", seoFirst(s.TwitterTitle, ogTitle))
+	seoMeta(&b, "name", "twitter:description", seoFirst(s.TwitterDescription, ogDesc))
+	seoMeta(&b, "name", "twitter:image", twImage)
+	if s.StructuredData != "" {
+		b.WriteString(`<script type="application/ld+json" id="seo-jsonld">` +
+			s.StructuredData + "</script>\n")
+	}
+
+	c.Set("Cache-Control", "public, max-age=300")
+	return c.Type("html", "utf-8").SendString(b.String())
+}
+
+// seoFirst returns the first non-empty (trimmed) value.
+func seoFirst(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// seoResolveImage returns an absolute image URL: absolute URLs are kept as-is;
+// a root-relative path ("/og.png") is joined onto the domain when one is set.
+func seoResolveImage(img, domain string) string {
+	img = strings.TrimSpace(img)
+	if img == "" {
+		return ""
+	}
+	if strings.HasPrefix(img, "http://") || strings.HasPrefix(img, "https://") {
+		return img
+	}
+	if domain != "" && strings.HasPrefix(img, "/") {
+		return domain + img
+	}
+	return img
+}
+
+// seoMeta appends a <meta {attr}="{key}" content="{value}"> line when value is
+// non-empty, escaping the value.
+func seoMeta(b *strings.Builder, attr, key, value string) {
+	if strings.TrimSpace(value) == "" {
+		return
+	}
+	b.WriteString("<meta " + attr + `="` + key + `" content="` +
+		html.EscapeString(value) + "\">\n")
 }
 
 // Compile-time assertions that the models satisfy identifiable via pointers.

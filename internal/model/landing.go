@@ -117,6 +117,11 @@ func (LandingText) TableName() string { return "landing_text" }
 type LandingSeo struct {
 	ID uint `gorm:"primaryKey" json:"id"`
 
+	// SiteDomain is the canonical base URL (e.g. https://vahaai.com). When set,
+	// it fills in the canonical / og:url when those are blank and resolves a
+	// relative OG image path — so the admin sets the domain in one place.
+	SiteDomain string `gorm:"size:200" json:"site_domain"`
+
 	MetaTitle       string `gorm:"size:200" json:"meta_title"`
 	MetaDescription string `gorm:"size:400" json:"meta_description"`
 	MetaKeywords    string `gorm:"size:400" json:"meta_keywords"`

@@ -81,6 +81,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	faqCrud := handler.NewLandingCrudHandler[model.LandingFaq, *model.LandingFaq](faqRepo, "faq")
 	landingTextHandler := handler.NewLandingTextHandler(landingTextRepo)
 	landingSeoHandler := handler.NewLandingSeoHandler(landingSeoRepo)
+	landingUploadHandler := handler.NewLandingUploadHandler(
+		d.Cfg.Uploads.Dir, d.Cfg.Uploads.PublicBaseURL)
 	contactHandler := handler.NewContactHandler(contactRepo, settingRepo, emailPublisher, smsPublisher, d.Log)
 	handshakeHandler := handler.NewHandshakeHandler(sessStore)
 	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo)
@@ -114,6 +116,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// (the Encrypt middleware reads the X-Session header).
 	enc := middleware.Encrypt(sessStore)
 	v1.Get("/landing", enc, landingHandler.Public)
+	// Plain (not E2E) SEO head fragment for hosting-layer injection into
+	// index.html so no-JS social crawlers get the admin-managed meta.
+	v1.Get("/landing/meta.html", landingSeoHandler.MetaHTML)
 	v1.Post("/contact", enc, contactHandler.Submit)
 	// Legal documents (Terms & Conditions, etc.) shown in the app.
 	v1.Get("/legal/:key", enc, legalHandler.Public)
@@ -262,6 +267,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	landing.Put("/text", landingTextHandler.Update)
 	landing.Get("/seo", landingSeoHandler.Get)
 	landing.Put("/seo", landingSeoHandler.Update)
+	landing.Post("/seo/og-image", landingUploadHandler.UploadOgImage)
 	registerLandingCrud(landing, "nav", navCrud.List, navCrud.Create, navCrud.Update, navCrud.Delete)
 	registerLandingCrud(landing, "stats", statCrud.List, statCrud.Create, statCrud.Update, statCrud.Delete)
 	registerLandingCrud(landing, "features", featureCrud.List, featureCrud.Create, featureCrud.Update, featureCrud.Delete)

@@ -30,6 +30,16 @@ type Config struct {
 	SMTP     SMTPConfig
 	AI       AIConfig
 	Razorpay RazorpayConfig
+	Uploads  UploadsConfig
+}
+
+// UploadsConfig controls where admin-uploaded assets (e.g. the landing-page OG
+// image) are written and how their public URLs are built.
+type UploadsConfig struct {
+	Dir string // filesystem dir served at /uploads (default ./uploads)
+	// PublicBaseURL is the absolute base used to build upload URLs
+	// (e.g. https://api.vahaai.com). Empty = derive from the request host.
+	PublicBaseURL string
 }
 
 // AIConfig holds the keys and model choices for the tutoring pipeline: Claude
@@ -177,6 +187,10 @@ func Load() Config {
 			KeyID:         env("RAZORPAY_KEY_ID", ""),
 			KeySecret:     env("RAZORPAY_KEY_SECRET", ""),
 			WebhookSecret: env("RAZORPAY_WEBHOOK_SECRET", ""),
+		},
+		Uploads: UploadsConfig{
+			Dir:           env("UPLOADS_DIR", "./uploads"),
+			PublicBaseURL: env("PUBLIC_BASE_URL", ""),
 		},
 	}
 }

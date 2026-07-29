@@ -49,6 +49,9 @@ func New(d Deps) *fiber.App {
 		ExposeHeaders: "X-Encrypted",
 	}))
 
+	// Serve admin-uploaded assets (e.g. the landing OG image) from disk.
+	app.Static("/uploads", d.Cfg.Uploads.Dir)
+
 	registerRoutes(app, d)
 	return app
 }
