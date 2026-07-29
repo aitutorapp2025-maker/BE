@@ -86,3 +86,36 @@ func (r *LandingTextRepo) Save(t *model.LandingText) error {
 	t.ID = 1
 	return r.db.Save(t).Error
 }
+
+// LandingSeoRepo provides access to the singleton landing SEO row (id=1).
+type LandingSeoRepo struct {
+	db *gorm.DB
+}
+
+// NewLandingSeoRepo builds a LandingSeoRepo.
+func NewLandingSeoRepo(db *gorm.DB) *LandingSeoRepo {
+	return &LandingSeoRepo{db: db}
+}
+
+// Get returns the SEO row, creating a default if none exists.
+func (r *LandingSeoRepo) Get() (*model.LandingSeo, error) {
+	var s model.LandingSeo
+	err := r.db.First(&s, 1).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		s = model.LandingSeo{ID: 1}
+		if err := r.db.Create(&s).Error; err != nil {
+			return nil, err
+		}
+		return &s, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// Save persists the SEO row (always id=1).
+func (r *LandingSeoRepo) Save(s *model.LandingSeo) error {
+	s.ID = 1
+	return r.db.Save(s).Error
+}

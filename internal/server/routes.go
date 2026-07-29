@@ -39,6 +39,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	testimonialRepo := repository.NewOrderedRepo[model.LandingTestimonial](d.DB)
 	faqRepo := repository.NewOrderedRepo[model.LandingFaq](d.DB)
 	landingTextRepo := repository.NewLandingTextRepo(d.DB)
+	landingSeoRepo := repository.NewLandingSeoRepo(d.DB)
 	contactRepo := repository.NewContactRepository(d.DB)
 
 	emailPublisher := email.NewPublisher(d.MQ, func() bool { return d.SMTP().Enabled() })
@@ -72,13 +73,14 @@ func registerRoutes(app *fiber.App, d Deps) {
 	settingHandler := handler.NewSettingHandler(settingRepo, emailPublisher, smsPublisher, tutorService.Probe)
 
 	landingHandler := handler.NewLandingHandler(
-		navRepo, statRepo, featureRepo, testimonialRepo, faqRepo, landingTextRepo, settingRepo)
+		navRepo, statRepo, featureRepo, testimonialRepo, faqRepo, landingTextRepo, landingSeoRepo, settingRepo)
 	navCrud := handler.NewLandingCrudHandler[model.LandingNavItem, *model.LandingNavItem](navRepo, "nav item")
 	statCrud := handler.NewLandingCrudHandler[model.LandingStat, *model.LandingStat](statRepo, "stat")
 	featureCrud := handler.NewLandingCrudHandler[model.LandingFeature, *model.LandingFeature](featureRepo, "feature")
 	testimonialCrud := handler.NewLandingCrudHandler[model.LandingTestimonial, *model.LandingTestimonial](testimonialRepo, "testimonial")
 	faqCrud := handler.NewLandingCrudHandler[model.LandingFaq, *model.LandingFaq](faqRepo, "faq")
 	landingTextHandler := handler.NewLandingTextHandler(landingTextRepo)
+	landingSeoHandler := handler.NewLandingSeoHandler(landingSeoRepo)
 	contactHandler := handler.NewContactHandler(contactRepo, settingRepo, emailPublisher, smsPublisher, d.Log)
 	handshakeHandler := handler.NewHandshakeHandler(sessStore)
 	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo)
@@ -258,6 +260,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	landing := adminProtected.Group("/landing")
 	landing.Get("/text", landingTextHandler.Get)
 	landing.Put("/text", landingTextHandler.Update)
+	landing.Get("/seo", landingSeoHandler.Get)
+	landing.Put("/seo", landingSeoHandler.Update)
 	registerLandingCrud(landing, "nav", navCrud.List, navCrud.Create, navCrud.Update, navCrud.Delete)
 	registerLandingCrud(landing, "stats", statCrud.List, statCrud.Create, statCrud.Update, statCrud.Delete)
 	registerLandingCrud(landing, "features", featureCrud.List, featureCrud.Create, featureCrud.Update, featureCrud.Delete)

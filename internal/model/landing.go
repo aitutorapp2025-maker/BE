@@ -109,3 +109,38 @@ type LandingText struct {
 }
 
 func (LandingText) TableName() string { return "landing_text" }
+
+// LandingSeo is the singleton (id=1) of admin-managed SEO / social meta for the
+// public landing page. It powers the <title>, meta description/keywords,
+// canonical link, robots directive, Open Graph and Twitter Card tags, and an
+// optional JSON-LD structured-data block. Empty fields fall back on the FE.
+type LandingSeo struct {
+	ID uint `gorm:"primaryKey" json:"id"`
+
+	MetaTitle       string `gorm:"size:200" json:"meta_title"`
+	MetaDescription string `gorm:"size:400" json:"meta_description"`
+	MetaKeywords    string `gorm:"size:400" json:"meta_keywords"`
+	CanonicalURL    string `gorm:"size:300" json:"canonical_url"`
+	Robots          string `gorm:"size:80" json:"robots"`
+	ThemeColor      string `gorm:"size:20" json:"theme_color"`
+
+	OgTitle       string `gorm:"size:200" json:"og_title"`
+	OgDescription string `gorm:"size:400" json:"og_description"`
+	OgImage       string `gorm:"size:400" json:"og_image"`
+	OgType        string `gorm:"size:40" json:"og_type"`
+	OgURL         string `gorm:"size:300" json:"og_url"`
+	OgSiteName    string `gorm:"size:120" json:"og_site_name"`
+
+	TwitterCard        string `gorm:"size:40" json:"twitter_card"`
+	TwitterSite        string `gorm:"size:60" json:"twitter_site"`
+	TwitterTitle       string `gorm:"size:200" json:"twitter_title"`
+	TwitterDescription string `gorm:"size:400" json:"twitter_description"`
+	TwitterImage       string `gorm:"size:400" json:"twitter_image"`
+
+	StructuredData string `gorm:"type:text" json:"structured_data"` // raw JSON-LD
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (LandingSeo) TableName() string { return "landing_seo" }

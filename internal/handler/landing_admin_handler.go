@@ -120,6 +120,41 @@ func (h *LandingTextHandler) Update(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"success": true, "text": existing})
 }
 
+// LandingSeoHandler handles the singleton landing SEO / meta (GET/PUT).
+type LandingSeoHandler struct {
+	repo *repository.LandingSeoRepo
+}
+
+// NewLandingSeoHandler builds a LandingSeoHandler.
+func NewLandingSeoHandler(repo *repository.LandingSeoRepo) *LandingSeoHandler {
+	return &LandingSeoHandler{repo: repo}
+}
+
+// Get returns the landing SEO meta. GET /api/v1/admin/landing/seo
+func (h *LandingSeoHandler) Get(c *fiber.Ctx) error {
+	s, err := h.repo.Get()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to load SEO")
+	}
+	return c.JSON(fiber.Map{"success": true, "seo": s})
+}
+
+// Update saves the landing SEO meta. PUT /api/v1/admin/landing/seo
+func (h *LandingSeoHandler) Update(c *fiber.Ctx) error {
+	existing, err := h.repo.Get()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to load SEO")
+	}
+	if err := c.BodyParser(existing); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	existing.ID = 1
+	if err := h.repo.Save(existing); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to save SEO")
+	}
+	return c.JSON(fiber.Map{"success": true, "seo": existing})
+}
+
 // Compile-time assertions that the models satisfy identifiable via pointers.
 var (
 	_ identifiable = (*model.LandingNavItem)(nil)

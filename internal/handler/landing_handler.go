@@ -14,6 +14,7 @@ type LandingHandler struct {
 	testimonials *repository.OrderedRepo[model.LandingTestimonial]
 	faqs         *repository.OrderedRepo[model.LandingFaq]
 	text         *repository.LandingTextRepo
+	seo          *repository.LandingSeoRepo
 	settings     *repository.SettingRepository
 }
 
@@ -25,9 +26,10 @@ func NewLandingHandler(
 	testimonials *repository.OrderedRepo[model.LandingTestimonial],
 	faqs *repository.OrderedRepo[model.LandingFaq],
 	text *repository.LandingTextRepo,
+	seo *repository.LandingSeoRepo,
 	settings *repository.SettingRepository,
 ) *LandingHandler {
-	return &LandingHandler{nav, stats, features, testimonials, faqs, text, settings}
+	return &LandingHandler{nav, stats, features, testimonials, faqs, text, seo, settings}
 }
 
 // Public returns the whole landing page content. GET /api/v1/landing (no auth).
@@ -64,6 +66,10 @@ func (h *LandingHandler) Public(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to load content")
 	}
+	seo, err := h.seo.Get()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to load content")
+	}
 
 	// Public captcha info (site key only) so the contact form can render it.
 	captcha := fiber.Map{"enabled": false}
@@ -84,6 +90,7 @@ func (h *LandingHandler) Public(c *fiber.Ctx) error {
 		"testimonials": testimonials,
 		"faqs":         faqs,
 		"text":         text,
+		"seo":          seo,
 		"captcha":      captcha,
 	})
 }
