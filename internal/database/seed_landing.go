@@ -1,6 +1,8 @@
 package database
 
 import (
+	"errors"
+
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"gorm.io/gorm"
 )
@@ -148,6 +150,47 @@ func SeedLanding(db *gorm.DB) (bool, error) {
 			FooterDeveloperURL: "https://kasoftware.in/",
 		}
 		if err := db.Create(&text).Error; err != nil {
+			return false, err
+		}
+		seeded = true
+	}
+
+	// SEO / meta singleton — launch defaults. These mirror the static tags in
+	// web/index.html so search + social previews are correct out of the box;
+	// the admin can override everything from Landing Page → SEO & meta.
+	// Seed when the row is missing OR still blank (the admin GET lazily creates
+	// an empty id=1 row); never overwrite a row that already has a title.
+	var seoExisting model.LandingSeo
+	seoErr := db.First(&seoExisting, 1).Error
+	seoBlank := errors.Is(seoErr, gorm.ErrRecordNotFound) ||
+		(seoErr == nil && seoExisting.MetaTitle == "")
+	if seoErr != nil && !errors.Is(seoErr, gorm.ErrRecordNotFound) {
+		return false, seoErr
+	}
+	if seoBlank {
+		seo := model.LandingSeo{
+			ID:              1,
+			MetaTitle:       "Vaha AI — Personal AI Tutor for Class 1–12",
+			MetaDescription: "Vaha AI is your child's personal AI tutor — homework explained from their own textbooks, daily study plans, oral & written tests, and weekly parent reports. Tamil & English medium.",
+			MetaKeywords:    "AI tutor, homework help, Samacheer, State Board, CBSE, ICSE, Tamil medium, English medium, online tuition, Class 1-12",
+			CanonicalURL:    "https://vahaai.com/",
+			Robots:          "index, follow",
+			ThemeColor:      "#4F46E5",
+
+			OgTitle:       "Vaha AI — Personal AI Tutor for Class 1–12",
+			OgDescription: "Homework explained from your child's own textbooks, planned into daily tasks, with tests and weekly parent reports.",
+			OgImage:       "https://vahaai.com/icons/Icon-512.png",
+			OgType:        "website",
+			OgURL:         "https://vahaai.com/",
+			OgSiteName:    "Vaha AI",
+
+			TwitterCard: "summary_large_image",
+			// TwitterSite/Title/Description/Image left blank — they fall back to
+			// the Open Graph values when the page renders.
+
+			StructuredData: `{"@context":"https://schema.org","@type":"EducationalOrganization","name":"Vaha AI","url":"https://vahaai.com/","email":"support@vahaai.com","description":"Personal AI tutor for Class 1-12 — textbook-grounded homework help, study plans, tests and parent reports.","areaServed":"IN"}`,
+		}
+		if err := db.Save(&seo).Error; err != nil {
 			return false, err
 		}
 		seeded = true
