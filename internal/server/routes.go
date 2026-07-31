@@ -88,6 +88,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo)
 	tutorHandler := handler.NewTutorHandler(tutorService, studentRepo, creditService)
 	creditHandler := handler.NewCreditHandler(creditService, studentRepo)
+	reportHandler := handler.NewReportHandler(studentRepo, creditRepo)
 
 	// Razorpay UPI-AutoPay subscriptions. Keys come from admin Settings (env
 	// fallback), read per call so changes apply without a restart.
@@ -191,6 +192,12 @@ func registerRoutes(app *fiber.App, d Deps) {
 
 	// Billing / profit & loss (revenue vs AI cost — admin only).
 	adminProtected.Get("/billing", creditHandler.PnL)
+
+	// Reports (CSV exports, Excel-openable).
+	reports := adminProtected.Group("/reports")
+	reports.Get("/students", reportHandler.Students)
+	reports.Get("/payments", reportHandler.Payments)
+	reports.Get("/summary", reportHandler.Summary)
 
 	// Students CRUD.
 	students := adminProtected.Group("/students")

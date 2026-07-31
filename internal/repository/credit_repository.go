@@ -115,6 +115,15 @@ func (r *CreditRepository) Summary() (*PnL, error) {
 	return &p, nil
 }
 
+// RevenueEntries returns every money-in ledger row (plan grants + recharges),
+// newest first — the source for the admin payments report.
+func (r *CreditRepository) RevenueEntries() ([]model.CreditLedger, error) {
+	var rows []model.CreditLedger
+	err := r.db.Where("revenue_paise > 0").
+		Order("created_at DESC").Find(&rows).Error
+	return rows, err
+}
+
 // RecentByStudent returns a student's latest ledger entries (admin view).
 func (r *CreditRepository) RecentByStudent(studentID uint, limit int) ([]model.CreditLedger, error) {
 	var rows []model.CreditLedger
