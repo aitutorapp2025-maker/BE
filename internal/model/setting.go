@@ -10,7 +10,15 @@ type Setting struct {
 	LogoURL            string `gorm:"size:400" json:"logo_url"` // organisation logo (uploaded asset URL)
 	EmailNotifications bool   `gorm:"not null;default:true" json:"email_notifications"`
 	AutoApproveAnswers bool   `gorm:"not null;default:false" json:"auto_approve_answers"`
-	MaintenanceMode    bool   `gorm:"not null;default:false" json:"maintenance_mode"`
+	MaintenanceMode    bool   `gorm:"not null;default:false" json:"maintenance_mode"` // legacy (unused)
+
+	// Maintenance mode — separate toggles for the web and mobile customer apps.
+	// When on, customers see MaintenanceTitle/Message; the admin panel is never
+	// blocked. The message is edited from the admin "Maintenance" settings form.
+	MaintenanceWeb     bool   `gorm:"not null;default:false" json:"maintenance_web"`
+	MaintenanceMobile  bool   `gorm:"not null;default:false" json:"maintenance_mobile"`
+	MaintenanceTitle   string `gorm:"size:120" json:"maintenance_title"`
+	MaintenanceMessage string `gorm:"size:600" json:"maintenance_message"`
 
 	// Outgoing email (SMTP). Password is never serialized to the client.
 	SmtpEnabled  bool   `gorm:"not null;default:false" json:"smtp_enabled"`

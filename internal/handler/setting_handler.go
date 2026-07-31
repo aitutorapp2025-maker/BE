@@ -34,6 +34,11 @@ type settingRequest struct {
 	AutoApproveAnswers bool   `json:"auto_approve_answers"`
 	MaintenanceMode    bool   `json:"maintenance_mode"`
 
+	MaintenanceWeb     bool   `json:"maintenance_web"`
+	MaintenanceMobile  bool   `json:"maintenance_mobile"`
+	MaintenanceTitle   string `json:"maintenance_title"`
+	MaintenanceMessage string `json:"maintenance_message"`
+
 	// SMTP. Password is write-only: empty means "keep the existing password".
 	SmtpEnabled  bool   `json:"smtp_enabled"`
 	SmtpHost     string `json:"smtp_host"`
@@ -80,6 +85,24 @@ type settingRequest struct {
 	RazorpayWebhookSecret string `json:"razorpay_webhook_secret"`
 }
 
+// Maintenance returns the public maintenance status for the customer apps.
+// GET /api/v1/maintenance (no auth). Each app checks its own platform flag; the
+// admin panel never calls this, so admins are unaffected.
+func (h *SettingHandler) Maintenance(c *fiber.Ctx) error {
+	s, err := h.settings.Get()
+	if err != nil {
+		// Fail open — never lock customers out because settings couldn't load.
+		return c.JSON(fiber.Map{"success": true, "web": false, "mobile": false})
+	}
+	return c.JSON(fiber.Map{
+		"success": true,
+		"web":     s.MaintenanceWeb,
+		"mobile":  s.MaintenanceMobile,
+		"title":   s.MaintenanceTitle,
+		"message": s.MaintenanceMessage,
+	})
+}
+
 // Get returns the app settings. GET /api/v1/admin/settings
 func (h *SettingHandler) Get(c *fiber.Ctx) error {
 	s, err := h.settings.Get()
@@ -118,6 +141,10 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.EmailNotifications = req.EmailNotifications
 	s.AutoApproveAnswers = req.AutoApproveAnswers
 	s.MaintenanceMode = req.MaintenanceMode
+	s.MaintenanceWeb = req.MaintenanceWeb
+	s.MaintenanceMobile = req.MaintenanceMobile
+	s.MaintenanceTitle = strings.TrimSpace(req.MaintenanceTitle)
+	s.MaintenanceMessage = strings.TrimSpace(req.MaintenanceMessage)
 
 	// SMTP.
 	s.SmtpEnabled = req.SmtpEnabled

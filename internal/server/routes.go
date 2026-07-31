@@ -130,6 +130,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	v1.Get("/class-groups", enc, classGroupHandler.Public)
 	// Subscription plans for the landing page + student app.
 	v1.Get("/plans", enc, planHandler.Public)
+	// Maintenance status for the customer apps (web + mobile). Admin unaffected.
+	v1.Get("/maintenance", enc, settingHandler.Maintenance)
 
 	// Student (mobile) passwordless login — OTP over SMS. Encrypted end-to-end
 	// like the other public endpoints (phone number + code stay opaque).
