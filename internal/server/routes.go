@@ -206,6 +206,11 @@ func registerRoutes(app *fiber.App, d Deps) {
 	crons.Get("", cronHandler.List)
 	crons.Put("/:key", cronHandler.Toggle)
 
+	// Push notifications — admin broadcast to all customers or selected students.
+	notificationHandler := handler.NewNotificationHandler(
+		repository.NewDeviceTokenRepository(d.DB), d.Push)
+	adminProtected.Post("/notifications/send", notificationHandler.Send)
+
 	// Reports (CSV exports, Excel-openable).
 	reports := adminProtected.Group("/reports")
 	reports.Get("/students", reportHandler.Students)

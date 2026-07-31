@@ -52,3 +52,22 @@ func (r *DeviceTokenRepository) TokensForStudent(studentID uint) ([]string, erro
 		Pluck("token", &tokens).Error
 	return tokens, err
 }
+
+// AllTokens returns every registered device token (broadcast to all devices).
+func (r *DeviceTokenRepository) AllTokens() ([]string, error) {
+	var tokens []string
+	err := r.db.Model(&model.DeviceToken{}).Pluck("token", &tokens).Error
+	return tokens, err
+}
+
+// TokensForStudents returns the device tokens for the given student ids.
+func (r *DeviceTokenRepository) TokensForStudents(ids []uint) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var tokens []string
+	err := r.db.Model(&model.DeviceToken{}).
+		Where("student_id IN ?", ids).
+		Pluck("token", &tokens).Error
+	return tokens, err
+}

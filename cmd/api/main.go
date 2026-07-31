@@ -240,6 +240,7 @@ func main() {
 		SMTP:    smtpProvider,
 		SMS:     smsProvider,
 		Alerter: alerter,
+		Push:    pushSender,
 	})
 
 	go func() {

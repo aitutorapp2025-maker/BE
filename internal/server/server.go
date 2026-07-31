@@ -9,6 +9,7 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/config"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/cryptox"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/email"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/fcm"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/queue"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/sms"
 	"github.com/aitutorapp2025-maker/vaha-backend/pkg/logger"
@@ -30,6 +31,7 @@ type Deps struct {
 	SMTP    email.ConfigFunc // returns current SMTP config (DB settings, env fallback)
 	SMS     sms.ConfigFunc   // returns current SMS config (DB settings)
 	Alerter *alert.Alerter   // emails an admin on server errors
+	Push    *fcm.Sender      // FCM push sender (disabled when unconfigured)
 }
 
 // New builds and configures the Fiber app with all middleware and routes.
