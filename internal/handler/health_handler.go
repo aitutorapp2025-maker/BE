@@ -59,6 +59,26 @@ func (h *HealthHandler) Check(c *fiber.Ctx) error {
 	})
 }
 
+// Services returns the per-dependency status for the admin panel. Unlike Check,
+// it always responds 200 (with a healthy flag) so the admin UI can render each
+// service's up/down state even when one is down.
+func (h *HealthHandler) Services(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(c.Context(), 3*time.Second)
+	defer cancel()
+	deps := fiber.Map{
+		"postgres": h.checkPostgres(),
+		"redis":    h.checkRedis(ctx),
+		"rabbitmq": h.checkRabbitMQ(),
+	}
+	healthy := true
+	for _, v := range deps {
+		if v != "up" {
+			healthy = false
+		}
+	}
+	return c.JSON(fiber.Map{"success": true, "healthy": healthy, "services": deps})
+}
+
 func (h *HealthHandler) checkPostgres() string {
 	sqlDB, err := h.db.DB()
 	if err != nil {

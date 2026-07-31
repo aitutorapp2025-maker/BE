@@ -197,6 +197,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Dashboard overview (aggregate stats + recent students).
 	adminProtected.Get("/dashboard", dashboardHandler.Get)
 
+	// System status — Postgres / Redis / RabbitMQ health for the settings page.
+	adminProtected.Get("/status", healthHandler.Services)
+
 	// Billing / profit & loss (revenue vs AI cost — admin only).
 	adminProtected.Get("/billing", creditHandler.PnL)
 
