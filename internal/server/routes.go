@@ -201,10 +201,11 @@ func registerRoutes(app *fiber.App, d Deps) {
 	adminProtected.Get("/billing", creditHandler.PnL)
 
 	// Cron jobs (background jobs the admin can enable/disable).
-	cronHandler := handler.NewCronHandler(repository.NewCronRepository(d.DB))
+	cronHandler := handler.NewCronHandler(repository.NewCronRepository(d.DB), d.Sched)
 	crons := adminProtected.Group("/crons")
 	crons.Get("", cronHandler.List)
 	crons.Put("/:key", cronHandler.Toggle)
+	crons.Post("/:key/run", cronHandler.Run)
 
 	// Push notifications — admin broadcast to all customers or selected students.
 	notificationHandler := handler.NewNotificationHandler(

@@ -58,6 +58,32 @@ func (s *Scheduler) Start(interval time.Duration) {
 // Stop halts the loop.
 func (s *Scheduler) Stop() { close(s.stop) }
 
+// RunNow runs a registered job immediately, ignoring the enabled/daily gates
+// (for admin "Run now"). It records the outcome and returns the result string
+// and whether the job key was found.
+func (s *Scheduler) RunNow(key string) (result string, found bool) {
+	for _, j := range s.jobs {
+		if j.Key != key {
+			continue
+		}
+		now := time.Now()
+		r, rerr := j.Run(now)
+		status := "ok"
+		if rerr != nil {
+			status = "error"
+			r = trunc(rerr.Error(), 200)
+			s.log.Errorf("cron %s (run now): %v", key, rerr)
+		} else {
+			s.log.Infof("cron %s (run now): %s", key, r)
+		}
+		if err := s.crons.RecordRun(key, status, r, now); err != nil {
+			s.log.Errorf("cron %s: record run: %v", key, err)
+		}
+		return r, true
+	}
+	return "", false
+}
+
 // runDue runs each enabled, due job. A job failure is recorded and logged but
 // never takes the process down.
 func (s *Scheduler) runDue(now time.Time) {

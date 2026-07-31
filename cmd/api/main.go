@@ -241,6 +241,7 @@ func main() {
 		SMS:     smsProvider,
 		Alerter: alerter,
 		Push:    pushSender,
+		Sched:   sched,
 	})
 
 	go func() {
