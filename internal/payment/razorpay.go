@@ -15,7 +15,10 @@ import (
 	"time"
 )
 
-const subscriptionsURL = "https://api.razorpay.com/v1/subscriptions"
+const (
+	subscriptionsURL = "https://api.razorpay.com/v1/subscriptions"
+	plansURL         = "https://api.razorpay.com/v1/plans"
+)
 
 // Config holds the Razorpay credentials (from admin Settings). key_id is safe to
 // expose to the client (it's used to open checkout); the key secret and webhook
@@ -95,6 +98,66 @@ func (c *Client) CreateSubscription(planID string, totalCount int, startAt int64
 		return nil, fmt.Errorf("razorpay decode: %w", err)
 	}
 	return &sub, nil
+}
+
+type createPlanReq struct {
+	Period   string   `json:"period"`   // "monthly"
+	Interval int      `json:"interval"` // months per cycle
+	Item     planItem `json:"item"`
+}
+
+type planItem struct {
+	Name     string `json:"name"`
+	Amount   int    `json:"amount"` // in paise
+	Currency string `json:"currency"`
+}
+
+// CreatePlan creates a Razorpay subscription plan and returns its id (plan_…).
+// amountPaise is the per-cycle price in paise; intervalMonths is how many months
+// each cycle spans (1 = monthly). Razorpay plans are immutable, so a price/period
+// change means creating a new plan (a new id), not editing the old one.
+func (c *Client) CreatePlan(name string, amountPaise, intervalMonths int) (string, error) {
+	cfg := c.cfg()
+	if !cfg.Enabled() {
+		return "", fmt.Errorf("razorpay is not configured (set the keys in admin Settings)")
+	}
+	if intervalMonths <= 0 {
+		intervalMonths = 1
+	}
+	if amountPaise <= 0 {
+		return "", fmt.Errorf("razorpay plan needs a positive amount")
+	}
+	body, _ := json.Marshal(createPlanReq{
+		Period:   "monthly",
+		Interval: intervalMonths,
+		Item:     planItem{Name: name, Amount: amountPaise, Currency: "INR"},
+	})
+	req, err := http.NewRequest(http.MethodPost, plansURL, bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(cfg.KeyID, cfg.KeySecret)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("razorpay request: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("razorpay status %d: %s", resp.StatusCode, truncate(raw, 300))
+	}
+	var out struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return "", fmt.Errorf("razorpay decode: %w", err)
+	}
+	if out.ID == "" {
+		return "", fmt.Errorf("razorpay: empty plan id in response")
+	}
+	return out.ID, nil
 }
 
 // VerifyWebhook checks the X-Razorpay-Signature (HMAC-SHA256 of the raw body

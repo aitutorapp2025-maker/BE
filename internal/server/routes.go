@@ -69,7 +69,11 @@ func registerRoutes(app *fiber.App, d Deps) {
 	classHandler := handler.NewClassHandler(classRepo, classGroupRepo)
 	classGroupHandler := handler.NewClassGroupHandler(classGroupRepo)
 	bookHandler := handler.NewBookHandler(bookRepo, ingestPublisher)
-	planHandler := handler.NewPlanHandler(planRepo)
+	// Razorpay keys come from admin Settings (env fallback), read per call.
+	razorpayProvider := service.RazorpayProvider(settingRepo, d.Cfg.Razorpay)
+	razorpayClient := payment.NewClient(razorpayProvider)
+	// The plan handler auto-creates a Razorpay plan on create/price-change.
+	planHandler := handler.NewPlanHandler(planRepo, razorpayClient)
 	settingHandler := handler.NewSettingHandler(settingRepo, emailPublisher, smsPublisher, tutorService.Probe)
 
 	landingHandler := handler.NewLandingHandler(
@@ -90,11 +94,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	creditHandler := handler.NewCreditHandler(creditService, studentRepo)
 	reportHandler := handler.NewReportHandler(studentRepo, creditRepo)
 
-	// Razorpay UPI-AutoPay subscriptions. Keys come from admin Settings (env
-	// fallback), read per call so changes apply without a restart.
-	razorpayProvider := service.RazorpayProvider(settingRepo, d.Cfg.Razorpay)
+	// Razorpay UPI-AutoPay subscriptions (reuses the client/provider above).
 	paymentService := service.NewPaymentService(
-		payment.NewClient(razorpayProvider), razorpayProvider,
+		razorpayClient, razorpayProvider,
 		studentRepo, planRepo, creditService,
 		repository.NewPaymentEventRepository(d.DB))
 	paymentHandler := handler.NewPaymentHandler(paymentService, d.Log)
