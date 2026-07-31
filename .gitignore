@@ -26,3 +26,6 @@ Thumbs.db
 # Go workspace
 go.work
 go.work.sum
+
+# Firebase service account (secret)
+service-account.json
