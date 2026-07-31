@@ -12,11 +12,11 @@ import (
 // selected set of students.
 type NotificationHandler struct {
 	devices *repository.DeviceTokenRepository
-	push    *fcm.Sender
+	push    fcm.Pusher
 }
 
 // NewNotificationHandler builds a NotificationHandler.
-func NewNotificationHandler(devices *repository.DeviceTokenRepository, push *fcm.Sender) *NotificationHandler {
+func NewNotificationHandler(devices *repository.DeviceTokenRepository, push fcm.Pusher) *NotificationHandler {
 	return &NotificationHandler{devices: devices, push: push}
 }
 

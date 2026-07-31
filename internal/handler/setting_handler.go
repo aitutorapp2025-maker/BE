@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/email"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/fcm"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/sms"
 	"github.com/gofiber/fiber/v2"
@@ -46,6 +47,9 @@ type settingRequest struct {
 	UpdateMessage    string `json:"update_message"`
 	AndroidStoreURL  string `json:"android_store_url"`
 	IosStoreURL      string `json:"ios_store_url"`
+
+	// Uploaded Firebase service-account JSON (write-only; empty = keep existing).
+	FcmServiceAccount string `json:"fcm_service_account"`
 
 	// SMTP. Password is write-only: empty means "keep the existing password".
 	SmtpEnabled  bool   `json:"smtp_enabled"`
@@ -192,6 +196,7 @@ func (h *SettingHandler) Get(c *fiber.Ctx) error {
 	s.VoyageKeySet = s.VoyageAPIKey != ""
 	s.RazorpaySecretSet = s.RazorpayKeySecret != ""
 	s.RazorpayWebhookSet = s.RazorpayWebhookSecret != ""
+	s.FcmConfigured = s.FcmServiceAccount != ""
 	return c.JSON(fiber.Map{"success": true, "settings": s})
 }
 
@@ -226,6 +231,13 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.UpdateMessage = strings.TrimSpace(req.UpdateMessage)
 	s.AndroidStoreURL = strings.TrimSpace(req.AndroidStoreURL)
 	s.IosStoreURL = strings.TrimSpace(req.IosStoreURL)
+	if sa := strings.TrimSpace(req.FcmServiceAccount); sa != "" {
+		// Validate the uploaded service account before storing it.
+		if _, err := fcm.NewFromJSON(sa); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "invalid service account JSON: "+err.Error())
+		}
+		s.FcmServiceAccount = sa
+	}
 
 	// SMTP.
 	s.SmtpEnabled = req.SmtpEnabled
@@ -310,6 +322,7 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.VoyageKeySet = s.VoyageAPIKey != ""
 	s.RazorpaySecretSet = s.RazorpayKeySecret != ""
 	s.RazorpayWebhookSet = s.RazorpayWebhookSecret != ""
+	s.FcmConfigured = s.FcmServiceAccount != ""
 	return c.JSON(fiber.Map{"success": true, "settings": s})
 }
 

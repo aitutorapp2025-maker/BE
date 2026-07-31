@@ -31,7 +31,7 @@ func ExpireTrialsJob(students *repository.StudentRepository) Job {
 func TrialRemindersJob(
 	students *repository.StudentRepository,
 	devices *repository.DeviceTokenRepository,
-	push *fcm.Sender,
+	push fcm.Pusher,
 ) Job {
 	return Job{
 		Key:      "trial_reminders",

@@ -50,20 +50,24 @@ type Sender struct {
 	tokenExp time.Time
 }
 
-// NewFromEnv builds a Sender from FCM_CREDENTIALS_FILE / FCM_CREDENTIALS_JSON.
-// Returns a disabled sender (no error) when unconfigured; returns an error only
-// when credentials are present but malformed.
-func NewFromEnv() (*Sender, error) {
+// EnvCredentials returns the service-account JSON from FCM_CREDENTIALS_JSON or
+// FCM_CREDENTIALS_FILE (env fallback when nothing is uploaded in admin).
+func EnvCredentials() string {
 	raw := strings.TrimSpace(os.Getenv("FCM_CREDENTIALS_JSON"))
 	if raw == "" {
 		if f := strings.TrimSpace(os.Getenv("FCM_CREDENTIALS_FILE")); f != "" {
-			b, err := os.ReadFile(f)
-			if err != nil {
-				return nil, fmt.Errorf("fcm: read credentials file: %w", err)
+			if b, err := os.ReadFile(f); err == nil {
+				raw = strings.TrimSpace(string(b))
 			}
-			raw = string(b)
 		}
 	}
+	return raw
+}
+
+// NewFromJSON builds a Sender from a service-account JSON string. Empty input
+// yields a disabled sender (no error); malformed input returns an error.
+func NewFromJSON(raw string) (*Sender, error) {
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return &Sender{}, nil // disabled
 	}
@@ -82,6 +86,54 @@ func NewFromEnv() (*Sender, error) {
 		return nil, fmt.Errorf("fcm: parse private key: %w", err)
 	}
 	return &Sender{sa: &sa, key: key, client: &http.Client{Timeout: 15 * time.Second}}, nil
+}
+
+// NewFromEnv builds a Sender from the environment credentials.
+func NewFromEnv() (*Sender, error) { return NewFromJSON(EnvCredentials()) }
+
+// Pusher is what callers use to send — satisfied by both *Sender and *Provider.
+type Pusher interface {
+	Enabled() bool
+	SendToTokens(ctx context.Context, tokens []string, title, body string, data map[string]string) (int, error)
+}
+
+// Provider resolves the current Sender from a credentials source (admin settings
+// with an env fallback), rebuilding only when the credentials change — so an
+// uploaded service account takes effect immediately, no restart needed.
+type Provider struct {
+	source func() string
+	mu     sync.Mutex
+	raw    string
+	sender *Sender
+}
+
+// NewProvider builds a Provider whose credentials come from source().
+func NewProvider(source func() string) *Provider {
+	return &Provider{source: source}
+}
+
+func (p *Provider) resolve() *Sender {
+	raw := strings.TrimSpace(p.source())
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.sender != nil && raw == p.raw {
+		return p.sender
+	}
+	p.raw = raw
+	if s, err := NewFromJSON(raw); err == nil {
+		p.sender = s
+	} else {
+		p.sender = &Sender{} // disabled on bad creds
+	}
+	return p.sender
+}
+
+// Enabled reports whether the current credentials are usable.
+func (p *Provider) Enabled() bool { return p.resolve().Enabled() }
+
+// SendToTokens delegates to the current Sender.
+func (p *Provider) SendToTokens(ctx context.Context, tokens []string, title, body string, data map[string]string) (int, error) {
+	return p.resolve().SendToTokens(ctx, tokens, title, body, data)
 }
 
 // Enabled reports whether credentials are configured.

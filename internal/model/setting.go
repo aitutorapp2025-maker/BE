@@ -30,6 +30,12 @@ type Setting struct {
 	AndroidStoreURL  string `gorm:"size:300" json:"android_store_url"`
 	IosStoreURL      string `gorm:"size:300" json:"ios_store_url"`
 
+	// FcmServiceAccount is the uploaded Firebase service-account JSON used to
+	// send push notifications. Write-only (never serialized); FcmConfigured tells
+	// the admin whether one is on file.
+	FcmServiceAccount string `gorm:"type:text" json:"-"`
+	FcmConfigured     bool   `gorm:"-" json:"fcm_configured"`
+
 	// Outgoing email (SMTP). Password is never serialized to the client.
 	SmtpEnabled  bool   `gorm:"not null;default:false" json:"smtp_enabled"`
 	SmtpHost     string `gorm:"size:190" json:"smtp_host"`

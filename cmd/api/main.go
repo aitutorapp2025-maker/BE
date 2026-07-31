@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -195,15 +196,20 @@ func main() {
 	cronRepo := repository.NewCronRepository(db)
 	deviceRepo := repository.NewDeviceTokenRepository(db)
 
-	pushSender, ferr := fcm.NewFromEnv()
-	if ferr != nil {
-		log.Errorf("fcm: %v", ferr)
-		pushSender = &fcm.Sender{}
-	}
+	// Credentials come from admin settings (uploaded service account) with the
+	// environment as a fallback; the provider rebuilds when they change, so an
+	// upload takes effect without a restart.
+	pushSender := fcm.NewProvider(func() string {
+		if s, err := settingRepo.Get(); err == nil &&
+			strings.TrimSpace(s.FcmServiceAccount) != "" {
+			return s.FcmServiceAccount
+		}
+		return fcm.EnvCredentials()
+	})
 	if pushSender.Enabled() {
 		log.Infof("FCM push enabled")
 	} else {
-		log.Infof("FCM push disabled (set FCM_CREDENTIALS_FILE to enable)")
+		log.Infof("FCM push disabled (upload a service account in admin Settings)")
 	}
 
 	sched := scheduler.New(cronRepo, log)

@@ -32,7 +32,7 @@ type Deps struct {
 	SMTP    email.ConfigFunc // returns current SMTP config (DB settings, env fallback)
 	SMS     sms.ConfigFunc   // returns current SMS config (DB settings)
 	Alerter *alert.Alerter   // emails an admin on server errors
-	Push    *fcm.Sender      // FCM push sender (disabled when unconfigured)
+	Push    fcm.Pusher       // FCM push sender (disabled when unconfigured)
 	Sched   *scheduler.Scheduler // background job runner (for admin "Run now")
 }
 
