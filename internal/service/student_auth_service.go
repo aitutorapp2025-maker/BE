@@ -243,6 +243,20 @@ func (s *StudentAuthService) GetStudent(ctx context.Context, studentID uint) (*m
 	return s.students.FindByID(studentID)
 }
 
+// DeleteAccount soft-deletes the signed-in student and revokes their session.
+// The row is kept (soft delete) but excluded from every query, so a later
+// re-registration with the same phone starts a fresh record — the old data is
+// never resurfaced.
+func (s *StudentAuthService) DeleteAccount(ctx context.Context, studentID uint, sid string) error {
+	if err := s.students.Delete(studentID); err != nil {
+		return err
+	}
+	if sid != "" {
+		_ = s.sessions.Revoke(ctx, sid)
+	}
+	return nil
+}
+
 // UpdateProfile saves the signed-in student's profile (name, class, board,
 // medium, parent phone) so it persists on the server — surviving a reinstall.
 func (s *StudentAuthService) UpdateProfile(ctx context.Context, studentID uint, in StudentProfileInput) (*model.Student, error) {

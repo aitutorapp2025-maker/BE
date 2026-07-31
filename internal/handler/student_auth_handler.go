@@ -121,6 +121,22 @@ func (h *StudentAuthHandler) Me(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"success": true, "student": st, "needs_autopay": needsAutopay})
 }
 
+// DeleteAccount soft-deletes the signed-in student's account and revokes the
+// session. Re-registering later starts a fresh record.
+//
+// DELETE /api/v1/student/account  (Bearer student JWT)
+func (h *StudentAuthHandler) DeleteAccount(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	sid, _ := c.Locals("sid").(string)
+	if err := h.auth.DeleteAccount(c.Context(), studentID, sid); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to delete account")
+	}
+	return c.JSON(fiber.Map{"success": true})
+}
+
 type updateProfileRequest struct {
 	Name             string `json:"name"`
 	StudentClass     string `json:"student_class"`

@@ -1,6 +1,10 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 // Student is a learner account managed from the admin panel.
 type Student struct {
@@ -36,6 +40,10 @@ type Student struct {
 	JoinedAt      time.Time `json:"joined_at"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+	// DeletedAt enables soft delete: a deleted account keeps its row (audit /
+	// history) but is excluded from every query, so re-registering with the same
+	// phone creates a fresh record instead of resurfacing the old one.
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // TableName sets the table name explicitly.

@@ -146,6 +146,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 		middleware.Encrypt(sessStore))
 	studentProtected.Get("/me", studentAuthHandler.Me)
 	studentProtected.Put("/profile", studentAuthHandler.UpdateProfile)
+	// Soft-delete the account (kept for audit, hidden everywhere; re-register
+	// starts fresh).
+	studentProtected.Delete("/account", studentAuthHandler.DeleteAccount)
 	studentProtected.Post("/device-token", studentAuthHandler.SaveDeviceToken)
 	// Ask the AI tutor a textbook question (retrieval + Claude answer).
 	studentProtected.Post("/ask", tutorHandler.Ask)
