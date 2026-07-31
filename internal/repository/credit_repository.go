@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"gorm.io/gorm"
@@ -118,10 +119,47 @@ func (r *CreditRepository) Summary() (*PnL, error) {
 // RevenueEntries returns every money-in ledger row (plan grants + recharges),
 // newest first — the source for the admin payments report.
 func (r *CreditRepository) RevenueEntries() ([]model.CreditLedger, error) {
+	return r.RevenueEntriesFiltered(nil, nil, "")
+}
+
+// RevenueEntriesFiltered returns money-in ledger rows within an optional date
+// range [from, to) and optional kind (grant | recharge), newest first.
+func (r *CreditRepository) RevenueEntriesFiltered(from, to *time.Time, kind string) ([]model.CreditLedger, error) {
+	q := r.db.Where("revenue_paise > 0")
+	if from != nil {
+		q = q.Where("created_at >= ?", *from)
+	}
+	if to != nil {
+		q = q.Where("created_at < ?", *to)
+	}
+	if kind != "" {
+		q = q.Where("kind = ?", kind)
+	}
 	var rows []model.CreditLedger
-	err := r.db.Where("revenue_paise > 0").
-		Order("created_at DESC").Find(&rows).Error
+	err := q.Order("created_at DESC").Find(&rows).Error
 	return rows, err
+}
+
+// SummaryRange is Summary restricted to an optional date range [from, to).
+func (r *CreditRepository) SummaryRange(from, to *time.Time) (*PnL, error) {
+	base := func() *gorm.DB {
+		q := r.db.Model(&model.CreditLedger{})
+		if from != nil {
+			q = q.Where("created_at >= ?", *from)
+		}
+		if to != nil {
+			q = q.Where("created_at < ?", *to)
+		}
+		return q
+	}
+	var p PnL
+	if err := base().Select("COALESCE(SUM(revenue_paise),0)").Scan(&p.RevenuePaise).Error; err != nil {
+		return nil, err
+	}
+	base().Select("COALESCE(SUM(ai_cost_paise),0)").Scan(&p.AICostPaise)
+	base().Where("kind = ?", "debit").Count(&p.Debits)
+	base().Where("revenue_paise > 0").Distinct("student_id").Count(&p.Students)
+	return &p, nil
 }
 
 // RecentByStudent returns a student's latest ledger entries (admin view).
