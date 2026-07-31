@@ -23,6 +23,7 @@ func NewNotificationHandler(devices *repository.DeviceTokenRepository, push fcm.
 type sendNotificationRequest struct {
 	Title      string `json:"title"`
 	Body       string `json:"body"`
+	Image      string `json:"image"`       // optional picture URL shown in the notification
 	StudentIDs []uint `json:"student_ids"` // empty = all customers
 }
 
@@ -61,6 +62,7 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 	}
 
 	sent, _ := h.push.SendToTokens(c.Context(), tokens, req.Title, req.Body,
+		strings.TrimSpace(req.Image),
 		map[string]string{"type": "admin_broadcast"})
 	return c.JSON(fiber.Map{
 		"success": true,

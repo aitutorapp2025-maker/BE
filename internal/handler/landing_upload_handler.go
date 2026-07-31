@@ -52,6 +52,12 @@ func (h *AssetUploadHandler) UploadLogo(c *fiber.Ctx) error {
 	return h.save(c, "logo")
 }
 
+// UploadNotificationImage stores an image for a push notification.
+// POST /admin/notifications/image
+func (h *AssetUploadHandler) UploadNotificationImage(c *fiber.Ctx) error {
+	return h.save(c, "notif")
+}
+
 // save decodes a base64 image from the request, writes it under <dir>/<subdir>,
 // and returns its public URL.
 func (h *AssetUploadHandler) save(c *fiber.Ctx, subdir string) error {

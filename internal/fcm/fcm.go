@@ -94,7 +94,7 @@ func NewFromEnv() (*Sender, error) { return NewFromJSON(EnvCredentials()) }
 // Pusher is what callers use to send — satisfied by both *Sender and *Provider.
 type Pusher interface {
 	Enabled() bool
-	SendToTokens(ctx context.Context, tokens []string, title, body string, data map[string]string) (int, error)
+	SendToTokens(ctx context.Context, tokens []string, title, body, image string, data map[string]string) (int, error)
 }
 
 // Provider resolves the current Sender from a credentials source (admin settings
@@ -132,16 +132,17 @@ func (p *Provider) resolve() *Sender {
 func (p *Provider) Enabled() bool { return p.resolve().Enabled() }
 
 // SendToTokens delegates to the current Sender.
-func (p *Provider) SendToTokens(ctx context.Context, tokens []string, title, body string, data map[string]string) (int, error) {
-	return p.resolve().SendToTokens(ctx, tokens, title, body, data)
+func (p *Provider) SendToTokens(ctx context.Context, tokens []string, title, body, image string, data map[string]string) (int, error) {
+	return p.resolve().SendToTokens(ctx, tokens, title, body, image, data)
 }
 
 // Enabled reports whether credentials are configured.
 func (s *Sender) Enabled() bool { return s != nil && s.sa != nil && s.key != nil }
 
 // SendToTokens sends the same notification to each device token, returning how
-// many were accepted. Individual failures are collected, not fatal.
-func (s *Sender) SendToTokens(ctx context.Context, tokens []string, title, body string, data map[string]string) (int, error) {
+// many were accepted. [image] is an optional picture URL shown in the
+// notification. Individual failures are collected, not fatal.
+func (s *Sender) SendToTokens(ctx context.Context, tokens []string, title, body, image string, data map[string]string) (int, error) {
 	if !s.Enabled() {
 		return 0, fmt.Errorf("fcm: not configured")
 	}
@@ -155,7 +156,7 @@ func (s *Sender) SendToTokens(ctx context.Context, tokens []string, title, body 
 		if strings.TrimSpace(t) == "" {
 			continue
 		}
-		if err := s.send(ctx, tok, t, title, body, data); err != nil {
+		if err := s.send(ctx, tok, t, title, body, image, data); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -166,14 +167,15 @@ func (s *Sender) SendToTokens(ctx context.Context, tokens []string, title, body 
 	return sent, firstErr
 }
 
-func (s *Sender) send(ctx context.Context, accessToken, deviceToken, title, body string, data map[string]string) error {
+func (s *Sender) send(ctx context.Context, accessToken, deviceToken, title, body, image string, data map[string]string) error {
+	notif := map[string]string{"title": title, "body": body}
+	if strings.TrimSpace(image) != "" {
+		notif["image"] = image
+	}
 	msg := map[string]any{
 		"message": map[string]any{
-			"token": deviceToken,
-			"notification": map[string]string{
-				"title": title,
-				"body":  body,
-			},
+			"token":        deviceToken,
+			"notification": notif,
 		},
 	}
 	if len(data) > 0 {

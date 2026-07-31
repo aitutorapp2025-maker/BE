@@ -214,6 +214,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	notificationHandler := handler.NewNotificationHandler(
 		repository.NewDeviceTokenRepository(d.DB), d.Push)
 	adminProtected.Post("/notifications/send", notificationHandler.Send)
+	adminProtected.Post("/notifications/image", uploadHandler.UploadNotificationImage)
 
 	// Reports (CSV exports, Excel-openable).
 	reports := adminProtected.Group("/reports")
