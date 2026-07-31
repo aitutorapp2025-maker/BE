@@ -20,6 +20,16 @@ type Setting struct {
 	MaintenanceTitle   string `gorm:"size:120" json:"maintenance_title"`
 	MaintenanceMessage string `gorm:"size:600" json:"maintenance_message"`
 
+	// Mobile app version / force update. The app compares its own version to
+	// LatestAppVersion; below MinAppVersion (or when ForceUpdate is on) the
+	// update is mandatory (no skip), otherwise the app shows a skippable prompt.
+	LatestAppVersion string `gorm:"size:20" json:"latest_app_version"`
+	MinAppVersion    string `gorm:"size:20" json:"min_app_version"`
+	ForceUpdate      bool   `gorm:"not null;default:false" json:"force_update"`
+	UpdateMessage    string `gorm:"size:400" json:"update_message"`
+	AndroidStoreURL  string `gorm:"size:300" json:"android_store_url"`
+	IosStoreURL      string `gorm:"size:300" json:"ios_store_url"`
+
 	// Outgoing email (SMTP). Password is never serialized to the client.
 	SmtpEnabled  bool   `gorm:"not null;default:false" json:"smtp_enabled"`
 	SmtpHost     string `gorm:"size:190" json:"smtp_host"`

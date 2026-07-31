@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,6 +39,13 @@ type settingRequest struct {
 	MaintenanceMobile  bool   `json:"maintenance_mobile"`
 	MaintenanceTitle   string `json:"maintenance_title"`
 	MaintenanceMessage string `json:"maintenance_message"`
+
+	LatestAppVersion string `json:"latest_app_version"`
+	MinAppVersion    string `json:"min_app_version"`
+	ForceUpdate      bool   `json:"force_update"`
+	UpdateMessage    string `json:"update_message"`
+	AndroidStoreURL  string `json:"android_store_url"`
+	IosStoreURL      string `json:"ios_store_url"`
 
 	// SMTP. Password is write-only: empty means "keep the existing password".
 	SmtpEnabled  bool   `json:"smtp_enabled"`
@@ -103,6 +111,73 @@ func (h *SettingHandler) Maintenance(c *fiber.Ctx) error {
 	})
 }
 
+// AppVersion tells the mobile app whether an update is available and whether it
+// is mandatory. GET /api/v1/app-version?platform=android&version=1.0.0 (no auth).
+func (h *SettingHandler) AppVersion(c *fiber.Ctx) error {
+	s, err := h.settings.Get()
+	if err != nil {
+		return c.JSON(fiber.Map{"success": true, "update_available": false})
+	}
+	platform := strings.ToLower(strings.TrimSpace(c.Query("platform")))
+	current := strings.TrimSpace(c.Query("version"))
+	latest := strings.TrimSpace(s.LatestAppVersion)
+	minv := strings.TrimSpace(s.MinAppVersion)
+
+	updateAvailable := latest != "" && cmpVersion(current, latest) < 0
+	force := (minv != "" && cmpVersion(current, minv) < 0) ||
+		(s.ForceUpdate && updateAvailable)
+
+	storeURL := s.AndroidStoreURL
+	if platform == "ios" {
+		storeURL = s.IosStoreURL
+	}
+	return c.JSON(fiber.Map{
+		"success":          true,
+		"update_available": updateAvailable,
+		"force":            force,
+		"latest":           latest,
+		"message":          s.UpdateMessage,
+		"store_url":        storeURL,
+	})
+}
+
+// cmpVersion compares dotted numeric versions ("1.2.0"), ignoring any "+build"
+// suffix. Returns -1 if a<b, 0 if equal, 1 if a>b. Missing parts count as 0.
+func cmpVersion(a, b string) int {
+	pa, pb := splitVersion(a), splitVersion(b)
+	n := len(pa)
+	if len(pb) > n {
+		n = len(pb)
+	}
+	for i := 0; i < n; i++ {
+		var x, y int
+		if i < len(pa) {
+			x = pa[i]
+		}
+		if i < len(pb) {
+			y = pb[i]
+		}
+		if x < y {
+			return -1
+		}
+		if x > y {
+			return 1
+		}
+	}
+	return 0
+}
+
+func splitVersion(v string) []int {
+	v = strings.SplitN(v, "+", 2)[0] // drop "+build" metadata
+	parts := strings.Split(v, ".")
+	out := make([]int, 0, len(parts))
+	for _, p := range parts {
+		n, _ := strconv.Atoi(strings.TrimSpace(p))
+		out = append(out, n)
+	}
+	return out
+}
+
 // Get returns the app settings. GET /api/v1/admin/settings
 func (h *SettingHandler) Get(c *fiber.Ctx) error {
 	s, err := h.settings.Get()
@@ -145,6 +220,12 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.MaintenanceMobile = req.MaintenanceMobile
 	s.MaintenanceTitle = strings.TrimSpace(req.MaintenanceTitle)
 	s.MaintenanceMessage = strings.TrimSpace(req.MaintenanceMessage)
+	s.LatestAppVersion = strings.TrimSpace(req.LatestAppVersion)
+	s.MinAppVersion = strings.TrimSpace(req.MinAppVersion)
+	s.ForceUpdate = req.ForceUpdate
+	s.UpdateMessage = strings.TrimSpace(req.UpdateMessage)
+	s.AndroidStoreURL = strings.TrimSpace(req.AndroidStoreURL)
+	s.IosStoreURL = strings.TrimSpace(req.IosStoreURL)
 
 	// SMTP.
 	s.SmtpEnabled = req.SmtpEnabled
