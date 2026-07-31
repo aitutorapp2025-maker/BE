@@ -64,6 +64,17 @@ func (r *StudentRepository) ExpireOverdueTrials(now time.Time) (int64, error) {
 	return res.RowsAffected, res.Error
 }
 
+// TrialsEndingWithin returns students still on trial whose trial ends between
+// now and now+days — the source for the trial-reminder cron.
+func (r *StudentRepository) TrialsEndingWithin(now time.Time, days int) ([]model.Student, error) {
+	end := now.AddDate(0, 0, days)
+	var out []model.Student
+	err := r.db.Where("pay_status = ?", "trial").
+		Where("trial_ends_at IS NOT NULL AND trial_ends_at >= ? AND trial_ends_at <= ?", now, end).
+		Find(&out).Error
+	return out, err
+}
+
 // FindBySubscriptionID returns the student with the given Razorpay subscription
 // id (used by the payment webhook to match a charge back to a student).
 func (r *StudentRepository) FindBySubscriptionID(subID string) (*model.Student, error) {

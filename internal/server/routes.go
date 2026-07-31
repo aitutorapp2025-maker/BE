@@ -200,6 +200,12 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Billing / profit & loss (revenue vs AI cost — admin only).
 	adminProtected.Get("/billing", creditHandler.PnL)
 
+	// Cron jobs (background jobs the admin can enable/disable).
+	cronHandler := handler.NewCronHandler(repository.NewCronRepository(d.DB))
+	crons := adminProtected.Group("/crons")
+	crons.Get("", cronHandler.List)
+	crons.Put("/:key", cronHandler.Toggle)
+
 	// Reports (CSV exports, Excel-openable).
 	reports := adminProtected.Group("/reports")
 	reports.Get("/students", reportHandler.Students)

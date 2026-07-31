@@ -17,6 +17,8 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/config"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/database"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/email"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/fcm"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/queue"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/scheduler"
@@ -188,10 +190,45 @@ func main() {
 	}
 
 	// ── Background scheduler ─────────────────────────────────────────────
-	// Expires trials whose window has passed without autopay (hourly).
-	sched := scheduler.New(repository.NewStudentRepository(db), log)
+	// Jobs are enabled/disabled from the admin panel (cron_jobs table).
+	studentRepo := repository.NewStudentRepository(db)
+	cronRepo := repository.NewCronRepository(db)
+	deviceRepo := repository.NewDeviceTokenRepository(db)
+
+	pushSender, ferr := fcm.NewFromEnv()
+	if ferr != nil {
+		log.Errorf("fcm: %v", ferr)
+		pushSender = &fcm.Sender{}
+	}
+	if pushSender.Enabled() {
+		log.Infof("FCM push enabled")
+	} else {
+		log.Infof("FCM push disabled (set FCM_CREDENTIALS_FILE to enable)")
+	}
+
+	sched := scheduler.New(cronRepo, log)
+	registrations := []struct {
+		job  scheduler.Job
+		name string
+		desc string
+	}{
+		{scheduler.ExpireTrialsJob(studentRepo),
+			"Expire trials",
+			"Marks a free trial expired when it ends with no active autopay."},
+		{scheduler.TrialRemindersJob(studentRepo, deviceRepo, pushSender),
+			"Trial ending reminders",
+			"Sends an FCM push 2, 1 and 0 days before a free trial ends."},
+	}
+	for _, r := range registrations {
+		if err := cronRepo.Ensure(model.CronJob{
+			Key: r.job.Key, Name: r.name, Description: r.desc, Schedule: r.job.Schedule,
+		}); err != nil {
+			log.Errorf("seed cron %s: %v", r.job.Key, err)
+		}
+		sched.Register(r.job)
+	}
 	sched.Start(time.Hour)
-	log.Infof("scheduler started (trial expiry)")
+	log.Infof("scheduler started (%d job(s), admin-managed)", len(registrations))
 
 	// ── HTTP server ──────────────────────────────────────────────────────
 	app := server.New(server.Deps{

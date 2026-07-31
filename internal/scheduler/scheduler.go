@@ -1,6 +1,7 @@
-// Package scheduler runs periodic background jobs (currently: expiring trials
-// whose window has passed without autopay). It's a plain time.Ticker goroutine —
-// no external cron dependency — started at boot and stopped on shutdown.
+// Package scheduler runs admin-managed background jobs. Jobs are registered in
+// code (with their dependencies) and enabled/disabled from the admin panel via
+// the cron_jobs table — each tick the scheduler runs only the enabled jobs and
+// records the outcome. It's a plain time.Ticker goroutine (no cron dependency).
 package scheduler
 
 import (
@@ -10,31 +11,43 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/pkg/logger"
 )
 
+// Job is a registered background task. Run returns a short human-readable result
+// (e.g. "reminded 12") stored as the last result.
+type Job struct {
+	Key      string
+	Schedule string // "hourly" (every tick) or "daily" (once per calendar day)
+	Run      func(now time.Time) (string, error)
+}
+
 // Scheduler owns the background job loop.
 type Scheduler struct {
-	students *repository.StudentRepository
-	log      *logger.Logger
-	stop     chan struct{}
+	crons *repository.CronRepository
+	jobs  []Job
+	log   *logger.Logger
+	stop  chan struct{}
 }
 
-// New builds a Scheduler.
-func New(students *repository.StudentRepository, log *logger.Logger) *Scheduler {
-	return &Scheduler{students: students, log: log, stop: make(chan struct{})}
+// New builds a Scheduler backed by the cron_jobs table.
+func New(crons *repository.CronRepository, log *logger.Logger) *Scheduler {
+	return &Scheduler{crons: crons, log: log, stop: make(chan struct{})}
 }
 
-// Start runs the jobs once immediately, then on the given interval until Stop.
+// Register adds a job to the registry (call before Start).
+func (s *Scheduler) Register(j Job) { s.jobs = append(s.jobs, j) }
+
+// Start runs due jobs once immediately, then on the given interval until Stop.
 func (s *Scheduler) Start(interval time.Duration) {
 	if interval <= 0 {
 		interval = time.Hour
 	}
 	go func() {
-		s.runOnce()
+		s.runDue(time.Now())
 		t := time.NewTicker(interval)
 		defer t.Stop()
 		for {
 			select {
 			case <-t.C:
-				s.runOnce()
+				s.runDue(time.Now())
 			case <-s.stop:
 				return
 			}
@@ -45,15 +58,42 @@ func (s *Scheduler) Start(interval time.Duration) {
 // Stop halts the loop.
 func (s *Scheduler) Stop() { close(s.stop) }
 
-// runOnce executes each periodic job, logging outcomes. A job failure is logged
-// and skipped — it must never take the process down.
-func (s *Scheduler) runOnce() {
-	n, err := s.students.ExpireOverdueTrials(time.Now())
-	if err != nil {
-		s.log.Errorf("scheduler: expire trials: %v", err)
-		return
+// runDue runs each enabled, due job. A job failure is recorded and logged but
+// never takes the process down.
+func (s *Scheduler) runDue(now time.Time) {
+	for _, j := range s.jobs {
+		cj, err := s.crons.FindByKey(j.Key)
+		if err != nil || cj == nil || !cj.Enabled {
+			continue
+		}
+		// Daily jobs run at most once per calendar day.
+		if j.Schedule == "daily" && cj.LastRunAt != nil && sameDay(*cj.LastRunAt, now) {
+			continue
+		}
+		result, rerr := j.Run(now)
+		status := "ok"
+		if rerr != nil {
+			status = "error"
+			result = trunc(rerr.Error(), 200)
+			s.log.Errorf("cron %s: %v", j.Key, rerr)
+		} else {
+			s.log.Infof("cron %s: %s", j.Key, result)
+		}
+		if err := s.crons.RecordRun(j.Key, status, result, now); err != nil {
+			s.log.Errorf("cron %s: record run: %v", j.Key, err)
+		}
 	}
-	if n > 0 {
-		s.log.Infof("scheduler: expired %d trial(s) with no autopay", n)
+}
+
+func sameDay(a, b time.Time) bool {
+	ay, am, ad := a.Date()
+	by, bm, bd := b.Date()
+	return ay == by && am == bm && ad == bd
+}
+
+func trunc(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
 	}
+	return s
 }
