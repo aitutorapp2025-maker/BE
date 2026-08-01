@@ -226,6 +226,86 @@ func (s *StudentAuthService) VerifyOTP(ctx context.Context, phone, code, deviceT
 	}, nil
 }
 
+// LoginWithGoogle verifies a Google ID token, finds-or-creates the student by
+// Google id (then email), and opens a signed session — same result as OTP login.
+func (s *StudentAuthService) LoginWithGoogle(ctx context.Context, idToken, clientPub, deviceToken string) (*StudentAuthResult, error) {
+	claims, err := verifyGoogleIDToken(ctx, idToken, s.cfg.GoogleClientID)
+	if err != nil {
+		return nil, err
+	}
+
+	student, err := s.students.FindByGoogleID(claims.Sub)
+	if errors.Is(err, repository.ErrNotFound) {
+		student, err = s.students.FindByEmail(claims.Email) // link an existing account
+	}
+	isNew := false
+	switch {
+	case errors.Is(err, repository.ErrNotFound):
+		student = &model.Student{
+			Name:      claims.Name,
+			Email:     claims.Email,
+			GoogleID:  claims.Sub,
+			Plan:      "trial",
+			PayStatus: "trial",
+			JoinedAt:  time.Now(),
+		}
+		if err := s.students.Create(student); err != nil {
+			return nil, err
+		}
+		s.grantTrial(student) // new student → free-trial plan + credits
+		isNew = true
+	case err != nil:
+		return nil, err
+	default:
+		// Existing student — backfill Google fields if missing.
+		changed := false
+		if student.GoogleID == "" {
+			student.GoogleID = claims.Sub
+			changed = true
+		}
+		if student.Email == "" && claims.Email != "" {
+			student.Email = claims.Email
+			changed = true
+		}
+		if student.Name == "" && claims.Name != "" {
+			student.Name = claims.Name
+			changed = true
+		}
+		if changed {
+			_ = s.students.Update(student)
+		}
+	}
+
+	if deviceToken = strings.TrimSpace(deviceToken); deviceToken != "" {
+		_ = s.devices.Map(deviceToken, "", student.ID, student.Phone)
+	}
+	sess, err := s.sessions.CreateStudent(ctx, student.ID, s.cfg.JWT.StudentTTL)
+	if err != nil {
+		return nil, err
+	}
+	token, exp, err := auth.GenerateStudentToken(s.cfg.JWT.Secret, s.cfg.JWT.StudentTTL, *student, sess.ID)
+	if err != nil {
+		return nil, err
+	}
+	var serverPub string
+	if strings.TrimSpace(clientPub) != "" {
+		aesKey, sPub, herr := cryptox.ServerHandshake(clientPub)
+		if herr == nil {
+			if e := s.sessions.SetEncKeyTTL(ctx, sess.ID, aesKey, s.cfg.JWT.StudentTTL); e == nil {
+				serverPub = sPub
+			}
+		}
+	}
+	return &StudentAuthResult{
+		Token:         token,
+		SigningSecret: sess.SigningSecret,
+		ServerPub:     serverPub,
+		ExpiresAt:     exp,
+		Student:       *student,
+		IsNew:         isNew,
+	}, nil
+}
+
 // StudentProfileInput carries the editable profile fields for a student.
 type StudentProfileInput struct {
 	Name             string

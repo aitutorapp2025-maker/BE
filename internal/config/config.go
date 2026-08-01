@@ -23,6 +23,11 @@ type Config struct {
 	// random code is generated and delivered by the SMS gateway.
 	OTPStatic string
 
+	// GoogleClientID is the OAuth Web client ID that Google ID tokens are
+	// issued for; the /student/google endpoint verifies the token's audience
+	// against it. Public value (not a secret).
+	GoogleClientID string
+
 	DB       DBConfig
 	Redis    RedisConfig
 	RabbitMQ RabbitMQConfig
@@ -140,7 +145,8 @@ func Load() Config {
 		AppName:   env("APP_NAME", "Vaha AI Backend"),
 		AppEnv:    env("APP_ENV", "development"),
 		AppPort:   env("APP_PORT", "8080"),
-		OTPStatic: env("OTP_STATIC", "202627"),
+		OTPStatic:      env("OTP_STATIC", "202627"),
+		GoogleClientID: env("GOOGLE_CLIENT_ID", ""),
 		DB: DBConfig{
 			Host:     env("DB_HOST", "127.0.0.1"),
 			Port:     env("DB_PORT", "5432"),

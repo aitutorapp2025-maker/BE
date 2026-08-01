@@ -89,6 +89,36 @@ func (r *StudentRepository) FindBySubscriptionID(subID string) (*model.Student, 
 	return &s, nil
 }
 
+// FindByGoogleID returns the student with the given Google account id.
+func (r *StudentRepository) FindByGoogleID(googleID string) (*model.Student, error) {
+	var s model.Student
+	err := r.db.Where("google_id = ?", googleID).First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// FindByEmail returns the student with the given email (used to link an
+// existing account to Google on first SSO sign-in).
+func (r *StudentRepository) FindByEmail(email string) (*model.Student, error) {
+	if email == "" {
+		return nil, ErrNotFound
+	}
+	var s model.Student
+	err := r.db.Where("email = ?", email).First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
 // Create inserts a new student.
 func (r *StudentRepository) Create(s *model.Student) error {
 	return r.db.Create(s).Error

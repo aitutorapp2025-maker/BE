@@ -103,6 +103,35 @@ func (h *StudentAuthHandler) VerifyOTP(c *fiber.Ctx) error {
 	})
 }
 
+type googleLoginRequest struct {
+	IDToken     string `json:"id_token"`
+	ClientPub   string `json:"client_pub"`
+	DeviceToken string `json:"device_token"`
+}
+
+// GoogleLogin signs a student in with a Google (Gmail) ID token. Same session
+// result as OTP login. POST /api/v1/student/google
+func (h *StudentAuthHandler) GoogleLogin(c *fiber.Ctx) error {
+	var req googleLoginRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	result, err := h.auth.LoginWithGoogle(c.Context(), req.IDToken, req.ClientPub, req.DeviceToken)
+	if err != nil {
+		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+	}
+	return c.JSON(fiber.Map{
+		"success":        true,
+		"token":          result.Token,
+		"token_type":     "Bearer",
+		"signing_secret": result.SigningSecret,
+		"server_pub":     result.ServerPub,
+		"expires_at":     result.ExpiresAt,
+		"is_new":         result.IsNew,
+		"student":        result.Student,
+	})
+}
+
 // Me returns the signed-in student's account (used to restore profile state,
 // e.g. after a reinstall the app re-fetches whether the profile is complete).
 //

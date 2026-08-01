@@ -12,6 +12,10 @@ type Student struct {
 	Name         string `gorm:"size:120;not null" json:"name"`
 	Phone        string `gorm:"size:20" json:"phone"`
 	ParentPhone  string `gorm:"size:20" json:"parent_phone"`
+	// Email + GoogleID are set for Google (SSO) sign-in. A Google-first account
+	// may have no phone until the student adds one.
+	Email    string `gorm:"size:190;index" json:"email"`
+	GoogleID string `gorm:"size:60;index" json:"google_id"`
 	StudentClass string `gorm:"size:40;not null" json:"student_class"` // e.g. "Class 10"
 	Board        string `gorm:"size:40;not null" json:"board"`         // State Board / CBSE / ICSE
 	Medium       string `gorm:"size:20;not null" json:"medium"`        // English / Tamil

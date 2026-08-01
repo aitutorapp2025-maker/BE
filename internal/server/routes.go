@@ -144,6 +144,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	student.Post("/register-device", enc, studentAuthHandler.RegisterDevice)
 	student.Post("/send-otp", enc, studentAuthHandler.SendOTP)
 	student.Post("/verify-otp", enc, studentAuthHandler.VerifyOTP)
+	// Google (Gmail) SSO — verifies the Google ID token, opens a session.
+	student.Post("/google", enc, studentAuthHandler.GoogleLogin)
 	// Signed-in student endpoints (profile + device token) — protected by the
 	// same strong scheme as admin: signed request (JWT + one-time nonce + HMAC
 	// signature) with end-to-end encrypted payloads.
