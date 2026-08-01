@@ -59,9 +59,12 @@ func registerRoutes(app *fiber.App, d Deps) {
 	sessStore := session.New(d.Redis, d.Cfg.JWT.RefreshTTL)
 	authService := service.NewAuthService(adminRepo, sessStore, d.Cfg)
 	creditService := service.NewCreditService(creditRepo)
+	// Google SSO config comes from admin Settings (env client id as fallback).
+	googleProvider := service.GoogleProvider(settingRepo, d.Cfg.GoogleClientID)
 	// New students get their free trial (plan + credits) on first login.
 	studentAuthService := service.NewStudentAuthService(
-		studentRepo, deviceTokenRepo, sessStore, smsPublisher, d.Cfg, planRepo, creditService)
+		studentRepo, deviceTokenRepo, sessStore, smsPublisher, d.Cfg, planRepo, creditService,
+		googleProvider)
 
 	healthHandler := handler.NewHealthHandler(d.DB, d.Redis, d.MQ)
 	adminAuthHandler := handler.NewAdminAuthHandler(authService, adminRepo)
@@ -134,6 +137,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	v1.Get("/plans", enc, planHandler.Public)
 	// Maintenance status for the customer apps (web + mobile). Admin unaffected.
 	v1.Get("/maintenance", enc, settingHandler.Maintenance)
+	// Which sign-in methods to show on the login screen (Google SSO, …).
+	v1.Get("/auth-config", enc, handler.NewAuthConfigHandler(googleProvider).Get)
 	// Mobile app version / force-update check.
 	v1.Get("/app-version", enc, settingHandler.AppVersion)
 

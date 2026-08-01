@@ -39,23 +39,26 @@ type StudentAuthService struct {
 	sms      *sms.Publisher
 	cfg      config.Config
 	// plans + credits give a new student their free trial on first login.
-	plans   *repository.PlanRepository
-	credits *CreditService
+	plans     *repository.PlanRepository
+	credits   *CreditService
+	googleCfg GoogleConfigFunc // admin-managed Google SSO config
 }
 
 // NewStudentAuthService builds a StudentAuthService.
 func NewStudentAuthService(students *repository.StudentRepository,
 	devices *repository.DeviceTokenRepository, sessions *session.Store,
 	smsPub *sms.Publisher, cfg config.Config,
-	plans *repository.PlanRepository, credits *CreditService) *StudentAuthService {
+	plans *repository.PlanRepository, credits *CreditService,
+	googleCfg GoogleConfigFunc) *StudentAuthService {
 	return &StudentAuthService{
-		students: students,
-		devices:  devices,
-		sessions: sessions,
-		sms:      smsPub,
-		cfg:      cfg,
-		plans:    plans,
-		credits:  credits,
+		students:  students,
+		devices:   devices,
+		sessions:  sessions,
+		sms:       smsPub,
+		cfg:       cfg,
+		plans:     plans,
+		credits:   credits,
+		googleCfg: googleCfg,
 	}
 }
 
@@ -229,7 +232,11 @@ func (s *StudentAuthService) VerifyOTP(ctx context.Context, phone, code, deviceT
 // LoginWithGoogle verifies a Google ID token, finds-or-creates the student by
 // Google id (then email), and opens a signed session — same result as OTP login.
 func (s *StudentAuthService) LoginWithGoogle(ctx context.Context, idToken, clientPub, deviceToken string) (*StudentAuthResult, error) {
-	claims, err := verifyGoogleIDToken(ctx, idToken, s.cfg.GoogleClientID)
+	gc := s.googleCfg()
+	if !gc.Enabled {
+		return nil, errors.New("google sign-in is disabled")
+	}
+	claims, err := verifyGoogleIDToken(ctx, idToken, gc.ClientID)
 	if err != nil {
 		return nil, err
 	}

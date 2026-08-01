@@ -36,6 +36,12 @@ type Setting struct {
 	FcmServiceAccount string `gorm:"type:text" json:"-"`
 	FcmConfigured     bool   `gorm:"-" json:"fcm_configured"`
 
+	// Google (Gmail) SSO. When enabled AND a client id is set, the login screen
+	// shows "Continue with Google". The client id is the public OAuth Web
+	// client id (not a secret).
+	GoogleSsoEnabled bool   `gorm:"not null;default:false" json:"google_sso_enabled"`
+	GoogleClientID   string `gorm:"size:200" json:"google_client_id"`
+
 	// Outgoing email (SMTP). Password is never serialized to the client.
 	SmtpEnabled  bool   `gorm:"not null;default:false" json:"smtp_enabled"`
 	SmtpHost     string `gorm:"size:190" json:"smtp_host"`

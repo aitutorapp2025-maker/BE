@@ -10,7 +10,34 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 )
+
+// GoogleConfig is the admin-managed Google-SSO state exposed to the login page.
+type GoogleConfig struct {
+	Enabled  bool
+	ClientID string
+}
+
+// GoogleConfigFunc returns the current config, evaluated per call so admin
+// changes apply without a restart.
+type GoogleConfigFunc func() GoogleConfig
+
+// GoogleProvider resolves the Google-SSO config from admin settings, with the
+// env client id as a fallback for the id (the enable flag comes only from settings).
+func GoogleProvider(settings *repository.SettingRepository, envClientID string) GoogleConfigFunc {
+	return func() GoogleConfig {
+		out := GoogleConfig{ClientID: strings.TrimSpace(envClientID)}
+		if s, err := settings.Get(); err == nil {
+			out.Enabled = s.GoogleSsoEnabled
+			if v := strings.TrimSpace(s.GoogleClientID); v != "" {
+				out.ClientID = v
+			}
+		}
+		return out
+	}
+}
 
 var googleHTTP = &http.Client{Timeout: 10 * time.Second}
 

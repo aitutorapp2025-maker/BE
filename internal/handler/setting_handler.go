@@ -51,6 +51,9 @@ type settingRequest struct {
 	// Uploaded Firebase service-account JSON (write-only; empty = keep existing).
 	FcmServiceAccount string `json:"fcm_service_account"`
 
+	GoogleSsoEnabled bool   `json:"google_sso_enabled"`
+	GoogleClientID   string `json:"google_client_id"`
+
 	// SMTP. Password is write-only: empty means "keep the existing password".
 	SmtpEnabled  bool   `json:"smtp_enabled"`
 	SmtpHost     string `json:"smtp_host"`
@@ -238,6 +241,8 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 		}
 		s.FcmServiceAccount = sa
 	}
+	s.GoogleSsoEnabled = req.GoogleSsoEnabled
+	s.GoogleClientID = strings.TrimSpace(req.GoogleClientID)
 
 	// SMTP.
 	s.SmtpEnabled = req.SmtpEnabled
