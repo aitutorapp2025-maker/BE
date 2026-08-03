@@ -213,6 +213,12 @@ func main() {
 		log.Infof("FCM push disabled (upload a service account in admin Settings)")
 	}
 
+	// Push worker: delivers admin broadcasts queued on RabbitMQ (resolves tokens,
+	// sends via FCM, prunes stale ones).
+	if err := worker.StartPushWorker(mq, pushSender, deviceRepo, log); err != nil {
+		log.Errorf("push worker: %v", err)
+	}
+
 	// PaymentService is built here (not just in routes) so the recurring-charge
 	// scheduler job and the HTTP handlers share one instance.
 	razorpayProvider := service.RazorpayProvider(settingRepo, cfg.Razorpay)

@@ -92,9 +92,11 @@ func NewFromJSON(raw string) (*Sender, error) {
 func NewFromEnv() (*Sender, error) { return NewFromJSON(EnvCredentials()) }
 
 // Pusher is what callers use to send — satisfied by both *Sender and *Provider.
+// SendToTokens returns how many were accepted plus the subset of tokens FCM
+// reported as invalid/unregistered (so the caller can prune them).
 type Pusher interface {
 	Enabled() bool
-	SendToTokens(ctx context.Context, tokens []string, title, body, image string, data map[string]string) (int, error)
+	SendToTokens(ctx context.Context, tokens []string, title, body, image string, data map[string]string) (sent int, invalid []string, err error)
 }
 
 // Provider resolves the current Sender from a credentials source (admin settings
@@ -132,7 +134,7 @@ func (p *Provider) resolve() *Sender {
 func (p *Provider) Enabled() bool { return p.resolve().Enabled() }
 
 // SendToTokens delegates to the current Sender.
-func (p *Provider) SendToTokens(ctx context.Context, tokens []string, title, body, image string, data map[string]string) (int, error) {
+func (p *Provider) SendToTokens(ctx context.Context, tokens []string, title, body, image string, data map[string]string) (int, []string, error) {
 	return p.resolve().SendToTokens(ctx, tokens, title, body, image, data)
 }
 
@@ -142,21 +144,26 @@ func (s *Sender) Enabled() bool { return s != nil && s.sa != nil && s.key != nil
 // SendToTokens sends the same notification to each device token, returning how
 // many were accepted. [image] is an optional picture URL shown in the
 // notification. Individual failures are collected, not fatal.
-func (s *Sender) SendToTokens(ctx context.Context, tokens []string, title, body, image string, data map[string]string) (int, error) {
+func (s *Sender) SendToTokens(ctx context.Context, tokens []string, title, body, image string, data map[string]string) (int, []string, error) {
 	if !s.Enabled() {
-		return 0, fmt.Errorf("fcm: not configured")
+		return 0, nil, fmt.Errorf("fcm: not configured")
 	}
 	tok, err := s.accessToken(ctx)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	sent := 0
+	var invalid []string
 	var firstErr error
 	for _, t := range tokens {
 		if strings.TrimSpace(t) == "" {
 			continue
 		}
-		if err := s.send(ctx, tok, t, title, body, image, data); err != nil {
+		dead, err := s.send(ctx, tok, t, title, body, image, data)
+		if err != nil {
+			if dead {
+				invalid = append(invalid, t)
+			}
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -164,10 +171,13 @@ func (s *Sender) SendToTokens(ctx context.Context, tokens []string, title, body,
 		}
 		sent++
 	}
-	return sent, firstErr
+	return sent, invalid, firstErr
 }
 
-func (s *Sender) send(ctx context.Context, accessToken, deviceToken, title, body, image string, data map[string]string) error {
+// send delivers one message. It returns dead=true when FCM reports the token as
+// unregistered/invalid (404 UNREGISTERED or a malformed-token 400), so the
+// caller can prune it.
+func (s *Sender) send(ctx context.Context, accessToken, deviceToken, title, body, image string, data map[string]string) (dead bool, err error) {
 	notif := map[string]string{"title": title, "body": body}
 	if strings.TrimSpace(image) != "" {
 		notif["image"] = image
@@ -188,14 +198,21 @@ func (s *Sender) send(ctx context.Context, accessToken, deviceToken, title, body
 	req.Header.Set("Content-Type", "application/json")
 	res, err := s.client.Do(req)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(res.Body, 512))
-		return fmt.Errorf("fcm send: %s: %s", res.Status, strings.TrimSpace(string(b)))
+		body := strings.TrimSpace(string(b))
+		// A dead token: FCM returns 404 UNREGISTERED/NotRegistered, or a 400
+		// INVALID_ARGUMENT for a malformed token. Both mean "stop sending here".
+		dead := res.StatusCode == http.StatusNotFound ||
+			strings.Contains(body, "UNREGISTERED") ||
+			strings.Contains(body, "NotRegistered") ||
+			strings.Contains(body, "registration-token-not-registered")
+		return dead, fmt.Errorf("fcm send: %s: %s", res.Status, body)
 	}
-	return nil
+	return false, nil
 }
 
 // accessToken returns a cached OAuth2 token, minting a new one when near expiry.

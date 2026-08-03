@@ -4,20 +4,19 @@ import (
 	"strings"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/fcm"
-	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/gofiber/fiber/v2"
 )
 
 // NotificationHandler lets an admin broadcast an FCM push to all customers or a
-// selected set of students.
+// selected set of students. The send is queued on RabbitMQ and delivered by the
+// push worker, so the HTTP request returns immediately.
 type NotificationHandler struct {
-	devices *repository.DeviceTokenRepository
-	push    fcm.Pusher
+	push *fcm.Publisher
 }
 
 // NewNotificationHandler builds a NotificationHandler.
-func NewNotificationHandler(devices *repository.DeviceTokenRepository, push fcm.Pusher) *NotificationHandler {
-	return &NotificationHandler{devices: devices, push: push}
+func NewNotificationHandler(push *fcm.Publisher) *NotificationHandler {
+	return &NotificationHandler{push: push}
 }
 
 type sendNotificationRequest struct {
@@ -27,7 +26,10 @@ type sendNotificationRequest struct {
 	StudentIDs []uint `json:"student_ids"` // empty = all customers
 }
 
-// Send delivers a push to all customers (empty student_ids) or the chosen ones.
+// Send queues a push to all customers (empty student_ids) or the chosen ones.
+// The push worker resolves the device tokens, delivers via FCM and prunes any
+// stale tokens.
+//
 // POST /api/v1/admin/notifications/send
 func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 	var req sendNotificationRequest
@@ -41,33 +43,20 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 	}
 	if !h.push.Enabled() {
 		return fiber.NewError(fiber.StatusServiceUnavailable,
-			"push is not configured — add the Firebase service account (FCM_CREDENTIALS_FILE)")
+			"push is not configured — add the Firebase service account in Settings")
 	}
 
-	var (
-		tokens []string
-		err    error
-	)
-	if len(req.StudentIDs) == 0 {
-		tokens, err = h.devices.AllTokens()
-	} else {
-		tokens, err = h.devices.TokensForStudents(req.StudentIDs)
+	if err := h.push.Enqueue(fcm.PushJob{
+		Title:      req.Title,
+		Body:       req.Body,
+		Image:      strings.TrimSpace(req.Image),
+		StudentIDs: req.StudentIDs,
+	}); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "could not queue the notification")
 	}
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "failed to load device tokens")
-	}
-	if len(tokens) == 0 {
-		return c.JSON(fiber.Map{"success": true, "sent": 0, "devices": 0,
-			"message": "No devices registered for the selected recipients."})
-	}
-
-	sent, _ := h.push.SendToTokens(c.Context(), tokens, req.Title, req.Body,
-		strings.TrimSpace(req.Image),
-		map[string]string{"type": "admin_broadcast"})
 	return c.JSON(fiber.Map{
 		"success": true,
-		"sent":    sent,
-		"devices": len(tokens),
-		"message": "Notification sent.",
+		"queued":  true,
+		"message": "Notification queued for delivery.",
 	})
 }

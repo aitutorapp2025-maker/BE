@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/ai"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/email"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/fcm"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/handler"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/middleware"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
@@ -144,7 +145,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Maintenance status for the customer apps (web + mobile). Admin unaffected.
 	v1.Get("/maintenance", enc, settingHandler.Maintenance)
 	// Which sign-in methods to show on the login screen (Google SSO, …).
-	v1.Get("/auth-config", enc, handler.NewAuthConfigHandler(googleProvider).Get)
+	v1.Get("/auth-config", enc, handler.NewAuthConfigHandler(googleProvider, settingRepo).Get)
 	// Mobile app version / force-update check.
 	v1.Get("/app-version", enc, settingHandler.AppVersion)
 
@@ -227,9 +228,10 @@ func registerRoutes(app *fiber.App, d Deps) {
 	crons.Put("/:key", cronHandler.Toggle)
 	crons.Post("/:key/run", cronHandler.Run)
 
-	// Push notifications — admin broadcast to all customers or selected students.
-	notificationHandler := handler.NewNotificationHandler(
-		repository.NewDeviceTokenRepository(d.DB), d.Push)
+	// Push notifications — admin broadcast to all customers or selected students,
+	// queued on RabbitMQ and delivered by the push worker.
+	pushPublisher := fcm.NewPublisher(d.MQ, func() bool { return d.Push.Enabled() })
+	notificationHandler := handler.NewNotificationHandler(pushPublisher)
 	adminProtected.Post("/notifications/send", notificationHandler.Send)
 	adminProtected.Post("/notifications/image", uploadHandler.UploadNotificationImage)
 

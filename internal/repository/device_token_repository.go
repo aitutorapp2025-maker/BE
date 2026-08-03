@@ -60,6 +60,15 @@ func (r *DeviceTokenRepository) AllTokens() ([]string, error) {
 	return tokens, err
 }
 
+// DeleteTokens removes the given device tokens (used to prune tokens FCM
+// reports as UNREGISTERED/stale, so broadcasts stop wasting sends on them).
+func (r *DeviceTokenRepository) DeleteTokens(tokens []string) error {
+	if len(tokens) == 0 {
+		return nil
+	}
+	return r.db.Where("token IN ?", tokens).Delete(&model.DeviceToken{}).Error
+}
+
 // TokensForStudents returns the device tokens for the given student ids.
 func (r *DeviceTokenRepository) TokensForStudents(ids []uint) ([]string, error) {
 	if len(ids) == 0 {

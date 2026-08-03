@@ -75,8 +75,11 @@ func TrialRemindersJob(
 				if terr != nil || len(tokens) == 0 {
 					continue
 				}
-				n, _ := push.SendToTokens(context.Background(), tokens, title, body, "",
+				n, invalid, _ := push.SendToTokens(context.Background(), tokens, title, body, "",
 					map[string]string{"type": "trial_reminder"})
+				if len(invalid) > 0 {
+					_ = devices.DeleteTokens(invalid)
+				}
 				if n > 0 {
 					sent++
 				}
