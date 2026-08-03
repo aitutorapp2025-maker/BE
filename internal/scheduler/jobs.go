@@ -7,7 +7,25 @@ import (
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/fcm"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 )
+
+// ChargeDueMandatesJob triggers the recurring UPI auto-debit for students whose
+// headless mandate is authorized and whose next charge is due. Idempotent (each
+// debit is confirmed + granted via webhook), so it runs every tick.
+func ChargeDueMandatesJob(payments *service.PaymentService) Job {
+	return Job{
+		Key:      "charge_due_mandates",
+		Schedule: "hourly",
+		Run: func(now time.Time) (string, error) {
+			n, err := payments.ChargeDueMandates(now)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("charged %d mandate(s)", n), nil
+		},
+	}
+}
 
 // ExpireTrialsJob marks trials as expired once their window passes without
 // autopay. Idempotent, so it runs every tick.

@@ -33,6 +33,16 @@ type Student struct {
 	// RazorpaySubscriptionID is the active UPI AutoPay subscription (sub_...),
 	// set when the student subscribes; the webhook matches charges back to them.
 	RazorpaySubscriptionID string `gorm:"size:60;index" json:"razorpay_subscription_id"`
+	// Headless UPI-AutoPay (Orders+Tokens intent flow). RazorpayCustomerID is the
+	// Razorpay customer (cust_…) reused across mandates; RazorpayTokenID is the
+	// authorized mandate token (token_…) used to trigger each recurring debit
+	// ourselves; SubscribedPlanID is the plan we auto-debit; NextChargeAt is when
+	// the scheduler should trigger the next debit. These are empty for students on
+	// the legacy Subscriptions checkout.
+	RazorpayCustomerID string     `gorm:"size:60;index" json:"razorpay_customer_id"`
+	RazorpayTokenID    string     `gorm:"size:60;index" json:"razorpay_token_id"`
+	SubscribedPlanID   uint       `gorm:"index" json:"subscribed_plan_id"`
+	NextChargeAt       *time.Time `gorm:"index" json:"next_charge_at"`
 	// TrialEndsAt is when the free trial expires. The base-plan subscription is
 	// scheduled to auto-debit at this time (Razorpay start_at).
 	TrialEndsAt *time.Time `json:"trial_ends_at"`

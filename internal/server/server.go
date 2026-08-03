@@ -12,6 +12,7 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/fcm"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/queue"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/scheduler"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/sms"
 	"github.com/aitutorapp2025-maker/vaha-backend/pkg/logger"
 	"github.com/gofiber/fiber/v2"
@@ -33,7 +34,8 @@ type Deps struct {
 	SMS     sms.ConfigFunc   // returns current SMS config (DB settings)
 	Alerter *alert.Alerter   // emails an admin on server errors
 	Push    fcm.Pusher       // FCM push sender (disabled when unconfigured)
-	Sched   *scheduler.Scheduler // background job runner (for admin "Run now")
+	Sched   *scheduler.Scheduler    // background job runner (for admin "Run now")
+	Payments *service.PaymentService // shared with the recurring-charge scheduler job
 }
 
 // New builds and configures the Fiber app with all middleware and routes.

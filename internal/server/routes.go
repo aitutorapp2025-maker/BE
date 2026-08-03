@@ -92,16 +92,22 @@ func registerRoutes(app *fiber.App, d Deps) {
 		d.Cfg.Uploads.Dir, d.Cfg.Uploads.PublicBaseURL)
 	contactHandler := handler.NewContactHandler(contactRepo, settingRepo, emailPublisher, smsPublisher, d.Log)
 	handshakeHandler := handler.NewHandshakeHandler(sessStore)
-	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo)
-	tutorHandler := handler.NewTutorHandler(tutorService, studentRepo, creditService)
+	// Whether trials require a UPI-AutoPay mandate — admin-toggleable, read per call.
+	autopayEnabled := service.AutopayProvider(settingRepo)
+	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo, autopayEnabled)
+	tutorHandler := handler.NewTutorHandler(tutorService, studentRepo, creditService, autopayEnabled)
 	creditHandler := handler.NewCreditHandler(creditService, studentRepo)
 	reportHandler := handler.NewReportHandler(studentRepo, creditRepo)
 
-	// Razorpay UPI-AutoPay subscriptions (reuses the client/provider above).
-	paymentService := service.NewPaymentService(
-		razorpayClient, razorpayProvider,
-		studentRepo, planRepo, creditService,
-		repository.NewPaymentEventRepository(d.DB))
+	// Razorpay UPI-AutoPay: reuse the PaymentService built in main.go (shared with
+	// the recurring-charge scheduler job); fall back to building one if absent.
+	paymentService := d.Payments
+	if paymentService == nil {
+		paymentService = service.NewPaymentService(
+			razorpayClient, razorpayProvider,
+			studentRepo, planRepo, creditService,
+			repository.NewPaymentEventRepository(d.DB))
+	}
 	paymentHandler := handler.NewPaymentHandler(paymentService, d.Log)
 	legalHandler := handler.NewLegalHandler(legalRepo)
 	dashboardHandler := handler.NewDashboardHandler(dashboardRepo)
@@ -167,6 +173,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Post("/ask", tutorHandler.Ask)
 	// Start a UPI-AutoPay subscription (returns the Razorpay checkout link).
 	studentProtected.Post("/subscribe", paymentHandler.Subscribe)
+	// Headless UPI-AutoPay: returns a GPay intent deeplink (no Razorpay UI).
+	studentProtected.Post("/mandate-intent", paymentHandler.MandateIntent)
 
 	// Public client-side error reporting (emails an alert to the admin).
 	errorReportHandler := handler.NewErrorReportHandler(d.Alerter)

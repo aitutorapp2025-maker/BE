@@ -99,6 +99,11 @@ type Setting struct {
 	RazorpayKeySecret     string `gorm:"size:120" json:"-"`
 	RazorpayWebhookSecret string `gorm:"size:120" json:"-"`
 
+	// AutopayEnabled controls whether trials require a UPI-AutoPay mandate. When
+	// off, new customers are never prompted to enable autopay (the trial is
+	// usable without a mandate). Defaults to on to preserve existing behaviour.
+	AutopayEnabled bool `gorm:"not null;default:true" json:"autopay_enabled"`
+
 	// Computed (not stored): whether each secret is on file.
 	NexmoSecretSet       bool `gorm:"-" json:"nexmo_secret_set"`
 	SmsExpertPasswordSet bool `gorm:"-" json:"smsexpert_password_set"`

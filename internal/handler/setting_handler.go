@@ -98,6 +98,9 @@ type settingRequest struct {
 	RazorpayKeyID         string `json:"razorpay_key_id"`
 	RazorpayKeySecret     string `json:"razorpay_key_secret"`
 	RazorpayWebhookSecret string `json:"razorpay_webhook_secret"`
+
+	// Whether trials require a UPI-AutoPay mandate (admin-toggleable).
+	AutopayEnabled bool `json:"autopay_enabled"`
 }
 
 // Maintenance returns the public maintenance status for the customer apps.
@@ -315,6 +318,7 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	if strings.TrimSpace(req.RazorpayWebhookSecret) != "" {
 		s.RazorpayWebhookSecret = strings.TrimSpace(req.RazorpayWebhookSecret)
 	}
+	s.AutopayEnabled = req.AutopayEnabled
 
 	if err := h.settings.Save(s); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to save settings")

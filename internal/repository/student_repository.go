@@ -89,6 +89,33 @@ func (r *StudentRepository) FindBySubscriptionID(subID string) (*model.Student, 
 	return &s, nil
 }
 
+// FindByCustomerID returns the student with the given Razorpay customer id
+// (used by the headless UPI-mandate webhook to match a payment to a student).
+func (r *StudentRepository) FindByCustomerID(customerID string) (*model.Student, error) {
+	if customerID == "" {
+		return nil, ErrNotFound
+	}
+	var s model.Student
+	err := r.db.Where("razorpay_customer_id = ?", customerID).First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// ChargeableMandates returns students whose UPI-AutoPay mandate is due for a
+// recurring debit: autopay active, a stored token, and NextChargeAt in the past.
+func (r *StudentRepository) ChargeableMandates(now time.Time, limit int) ([]model.Student, error) {
+	var out []model.Student
+	err := r.db.Where("autopay_active = ? AND razorpay_token_id <> ''", true).
+		Where("next_charge_at IS NOT NULL AND next_charge_at <= ?", now).
+		Limit(limit).Find(&out).Error
+	return out, err
+}
+
 // FindByGoogleID returns the student with the given Google account id.
 func (r *StudentRepository) FindByGoogleID(googleID string) (*model.Student, error) {
 	var s model.Student

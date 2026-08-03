@@ -16,8 +16,12 @@ import (
 )
 
 const (
-	subscriptionsURL = "https://api.razorpay.com/v1/subscriptions"
-	plansURL         = "https://api.razorpay.com/v1/plans"
+	subscriptionsURL   = "https://api.razorpay.com/v1/subscriptions"
+	plansURL           = "https://api.razorpay.com/v1/plans"
+	customersURL       = "https://api.razorpay.com/v1/customers"
+	ordersURL          = "https://api.razorpay.com/v1/orders"
+	createUpiURL       = "https://api.razorpay.com/v1/payments/create/upi"
+	createRecurringURL = "https://api.razorpay.com/v1/payments/create/recurring"
 )
 
 // Config holds the Razorpay credentials (from admin Settings). key_id is safe to
@@ -158,6 +162,191 @@ func (c *Client) CreatePlan(name string, amountPaise, intervalMonths int) (strin
 		return "", fmt.Errorf("razorpay: empty plan id in response")
 	}
 	return out.ID, nil
+}
+
+// post sends a JSON body to a Razorpay endpoint with basic auth and decodes the
+// JSON response into out. Returns an error (with a truncated body) on non-200.
+func (c *Client) post(url string, body any, out any) error {
+	cfg := c.cfg()
+	if !cfg.Enabled() {
+		return fmt.Errorf("razorpay is not configured (set the keys in admin Settings)")
+	}
+	raw, _ := json.Marshal(body)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(raw))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(cfg.KeyID, cfg.KeySecret)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("razorpay request: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("razorpay status %d: %s", resp.StatusCode, truncate(respBody, 300))
+	}
+	if out != nil {
+		if err := json.Unmarshal(respBody, out); err != nil {
+			return fmt.Errorf("razorpay decode: %w", err)
+		}
+	}
+	return nil
+}
+
+// CreateCustomer creates (or returns the existing) Razorpay customer for a
+// UPI-AutoPay mandate. fail_existing=0 makes Razorpay return the existing
+// customer instead of erroring when the contact/email is already on file.
+func (c *Client) CreateCustomer(name, email, contact string) (string, error) {
+	body := map[string]any{"fail_existing": 0}
+	if name != "" {
+		body["name"] = name
+	}
+	if email != "" {
+		body["email"] = email
+	}
+	if contact != "" {
+		body["contact"] = contact
+	}
+	var out struct {
+		ID string `json:"id"`
+	}
+	if err := c.post(customersURL, body, &out); err != nil {
+		return "", err
+	}
+	if out.ID == "" {
+		return "", fmt.Errorf("razorpay: empty customer id")
+	}
+	return out.ID, nil
+}
+
+// CreateMandateOrder creates the authorization order that registers a UPI-AutoPay
+// mandate. amountPaise is the registration debit (e.g. ₹1). maxAmountPaise caps
+// each future auto-debit; expireAt (unix) is the mandate expiry. frequency
+// "as_presented" lets us debit whenever we present a charge (up to maxAmount).
+// notes are echoed back on the resulting payment webhook (we tag the student).
+func (c *Client) CreateMandateOrder(amountPaise, maxAmountPaise int, customerID string, expireAt int64, receipt string, notes map[string]string) (string, error) {
+	body := map[string]any{
+		"amount":      amountPaise,
+		"currency":    "INR",
+		"customer_id": customerID,
+		"method":      "upi",
+		"receipt":     receipt,
+		"token": map[string]any{
+			"max_amount": maxAmountPaise,
+			"expire_at":  expireAt,
+			"frequency":  "as_presented",
+		},
+	}
+	if len(notes) > 0 {
+		body["notes"] = notes
+	}
+	var out struct {
+		ID string `json:"id"`
+	}
+	if err := c.post(ordersURL, body, &out); err != nil {
+		return "", err
+	}
+	if out.ID == "" {
+		return "", fmt.Errorf("razorpay: empty order id")
+	}
+	return out.ID, nil
+}
+
+// UpiIntent is the create/upi intent response we use.
+type UpiIntent struct {
+	PaymentID string `json:"razorpay_payment_id"`
+	// Link is the UPI intent deeplink to launch the customer's UPI app (GPay) for
+	// mandate approval. Do NOT modify it — Razorpay rejects tampered links.
+	Link string `json:"link"`
+}
+
+// CreateUpiMandateIntent starts the mandate authorization payment via the UPI
+// INTENT flow and returns the launchable UPI deeplink. notes tag the student for
+// the webhook.
+func (c *Client) CreateUpiMandateIntent(amountPaise int, orderID, customerID string, notes map[string]string) (*UpiIntent, error) {
+	body := map[string]any{
+		"amount":      amountPaise,
+		"currency":    "INR",
+		"order_id":    orderID,
+		"customer_id": customerID,
+		"recurring":   "1",
+		"method":      "upi",
+		"upi":         map[string]any{"flow": "intent"},
+	}
+	if len(notes) > 0 {
+		body["notes"] = notes
+	}
+	var out UpiIntent
+	if err := c.post(createUpiURL, body, &out); err != nil {
+		return nil, err
+	}
+	if out.Link == "" {
+		return nil, fmt.Errorf("razorpay: no UPI intent link in response")
+	}
+	return &out, nil
+}
+
+// ChargeRecurring debits a registered mandate: it creates a recurring order then
+// charges the stored token. Returns the payment id. The actual credit grant
+// happens on the payment.captured webhook (idempotent), so this only needs to
+// initiate the debit. notes tag the student + plan for the webhook.
+func (c *Client) ChargeRecurring(amountPaise int, customerID, tokenID, receipt string, notes map[string]string) (string, error) {
+	// 1) Recurring order (payment_capture so the debit is auto-captured).
+	orderBody := map[string]any{
+		"amount":          amountPaise,
+		"currency":        "INR",
+		"customer_id":     customerID,
+		"payment_capture": true,
+		"receipt":         receipt,
+	}
+	if len(notes) > 0 {
+		orderBody["notes"] = notes
+	}
+	var order struct {
+		ID string `json:"id"`
+	}
+	if err := c.post(ordersURL, orderBody, &order); err != nil {
+		return "", fmt.Errorf("recurring order: %w", err)
+	}
+	// 2) Charge the mandate token.
+	payBody := map[string]any{
+		"amount":      amountPaise,
+		"currency":    "INR",
+		"order_id":    order.ID,
+		"customer_id": customerID,
+		"token":       tokenID,
+		"recurring":   "1",
+	}
+	if len(notes) > 0 {
+		payBody["notes"] = notes
+	}
+	var pay struct {
+		ID                string `json:"razorpay_payment_id"`
+		RazorpayPaymentID string `json:"id"`
+	}
+	if err := c.post(createRecurringURL, payBody, &pay); err != nil {
+		return "", fmt.Errorf("recurring charge: %w", err)
+	}
+	if pay.ID != "" {
+		return pay.ID, nil
+	}
+	return pay.RazorpayPaymentID, nil
+}
+
+// Refund refunds a captured payment. amountPaise <= 0 refunds the full amount.
+// Used to return the ₹1 mandate-verification debit after the mandate is set up.
+func (c *Client) Refund(paymentID string, amountPaise int) error {
+	if paymentID == "" {
+		return fmt.Errorf("razorpay: empty payment id for refund")
+	}
+	body := map[string]any{}
+	if amountPaise > 0 {
+		body["amount"] = amountPaise
+	}
+	url := fmt.Sprintf("https://api.razorpay.com/v1/payments/%s/refund", paymentID)
+	return c.post(url, body, nil)
 }
 
 // VerifyWebhook checks the X-Razorpay-Signature (HMAC-SHA256 of the raw body

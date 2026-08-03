@@ -16,11 +16,13 @@ type TutorHandler struct {
 	tutor    *service.TutorService
 	students *repository.StudentRepository
 	credits  *service.CreditService
+	autopay  service.AutopayEnabledFunc
 }
 
-// NewTutorHandler builds a TutorHandler.
-func NewTutorHandler(tutor *service.TutorService, students *repository.StudentRepository, credits *service.CreditService) *TutorHandler {
-	return &TutorHandler{tutor: tutor, students: students, credits: credits}
+// NewTutorHandler builds a TutorHandler. The autopay func gates the trial
+// mandate requirement behind the admin toggle.
+func NewTutorHandler(tutor *service.TutorService, students *repository.StudentRepository, credits *service.CreditService, autopay service.AutopayEnabledFunc) *TutorHandler {
+	return &TutorHandler{tutor: tutor, students: students, credits: credits, autopay: autopay}
 }
 
 type askRequest struct {
@@ -47,10 +49,11 @@ func (h *TutorHandler) Ask(c *fiber.Ctx) error {
 		return notFoundOrInternal(err, "student")
 	}
 
-	// Trial requires autopay. If the student is on trial but hasn't enabled (or
-	// has deleted) their UPI-AutoPay mandate, they can't use the trial — prompt
-	// them to enable it. Paid students are unaffected.
-	if st.PayStatus == "trial" && !st.AutopayActive {
+	// Trial requires autopay (only when the admin toggle is on). If the student
+	// is on trial but hasn't enabled (or has deleted) their UPI-AutoPay mandate,
+	// they can't use the trial — prompt them to enable it. Paid students are
+	// unaffected; if the admin disabled autopay, trials work without a mandate.
+	if h.autopay() && st.PayStatus == "trial" && !st.AutopayActive {
 		return c.Status(fiber.StatusPaymentRequired).JSON(fiber.Map{
 			"success":       false,
 			"error":         "Enable autopay to start your free trial.",

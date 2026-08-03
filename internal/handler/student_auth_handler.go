@@ -12,17 +12,20 @@ import (
 // StudentAuthHandler handles passwordless student login (OTP over SMS) for the
 // mobile app.
 type StudentAuthHandler struct {
-	auth   *service.StudentAuthService
-	groups *repository.ClassGroupRepository
+	auth    *service.StudentAuthService
+	groups  *repository.ClassGroupRepository
+	autopay service.AutopayEnabledFunc
 }
 
 // NewStudentAuthHandler builds a StudentAuthHandler. The class-group repo is
-// used to validate the subject group the student picks during onboarding.
+// used to validate the subject group the student picks during onboarding. The
+// autopay func gates the "enable autopay" prompt behind the admin toggle.
 func NewStudentAuthHandler(
 	auth *service.StudentAuthService,
 	groups *repository.ClassGroupRepository,
+	autopay service.AutopayEnabledFunc,
 ) *StudentAuthHandler {
-	return &StudentAuthHandler{auth: auth, groups: groups}
+	return &StudentAuthHandler{auth: auth, groups: groups, autopay: autopay}
 }
 
 type sendOtpRequest struct {
@@ -145,8 +148,10 @@ func (h *StudentAuthHandler) Me(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusUnauthorized, "account not found")
 	}
-	// The app shows an "enable autopay" prompt while a trial has no mandate.
-	needsAutopay := st.PayStatus == "trial" && !st.AutopayActive
+	// The app shows an "enable autopay" prompt while a trial has no mandate —
+	// but only when the admin has autopay enabled. When disabled, trials are
+	// usable without a mandate and no prompt is ever shown.
+	needsAutopay := h.autopay() && st.PayStatus == "trial" && !st.AutopayActive
 	return c.JSON(fiber.Map{"success": true, "student": st, "needs_autopay": needsAutopay})
 }
 

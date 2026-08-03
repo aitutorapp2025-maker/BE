@@ -20,6 +20,7 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/email"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/fcm"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/payment"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/queue"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/scheduler"
@@ -212,6 +213,16 @@ func main() {
 		log.Infof("FCM push disabled (upload a service account in admin Settings)")
 	}
 
+	// PaymentService is built here (not just in routes) so the recurring-charge
+	// scheduler job and the HTTP handlers share one instance.
+	razorpayProvider := service.RazorpayProvider(settingRepo, cfg.Razorpay)
+	razorpayClient := payment.NewClient(razorpayProvider)
+	paymentService := service.NewPaymentService(
+		razorpayClient, razorpayProvider,
+		studentRepo, repository.NewPlanRepository(db),
+		service.NewCreditService(repository.NewCreditRepository(db)),
+		repository.NewPaymentEventRepository(db))
+
 	sched := scheduler.New(cronRepo, log)
 	registrations := []struct {
 		job  scheduler.Job
@@ -224,6 +235,9 @@ func main() {
 		{scheduler.TrialRemindersJob(studentRepo, deviceRepo, pushSender),
 			"Trial ending reminders",
 			"Sends an FCM push 2, 1 and 0 days before a free trial ends."},
+		{scheduler.ChargeDueMandatesJob(paymentService),
+			"Charge due autopay mandates",
+			"Auto-debits due UPI-AutoPay mandates (headless flow) and grants plan credits."},
 	}
 	for _, r := range registrations {
 		if err := cronRepo.Ensure(model.CronJob{
@@ -245,9 +259,10 @@ func main() {
 		Log:     log,
 		SMTP:    smtpProvider,
 		SMS:     smsProvider,
-		Alerter: alerter,
-		Push:    pushSender,
-		Sched:   sched,
+		Alerter:  alerter,
+		Push:     pushSender,
+		Sched:    sched,
+		Payments: paymentService,
 	})
 
 	go func() {

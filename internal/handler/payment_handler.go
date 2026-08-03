@@ -49,6 +49,33 @@ func (h *PaymentHandler) Subscribe(c *fiber.Ctx) error {
 	})
 }
 
+// MandateIntent registers a headless UPI-AutoPay mandate and returns a UPI
+// intent deeplink the app launches directly (GPay) — no Razorpay checkout UI.
+// POST /api/v1/student/mandate-intent  { "plan_id": 3 }  (signed + encrypted)
+func (h *PaymentHandler) MandateIntent(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	if !h.payments.Enabled() {
+		return fiber.NewError(fiber.StatusServiceUnavailable,
+			"online payments are not configured yet")
+	}
+	var req subscribeRequest
+	if err := c.BodyParser(&req); err != nil || req.PlanID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "a plan_id is required")
+	}
+	res, err := h.payments.CreateMandateIntent(studentID, req.PlanID)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadGateway, "could not start autopay: "+err.Error())
+	}
+	return c.JSON(fiber.Map{
+		"success":    true,
+		"payment_id": res.PaymentID,
+		"link":       res.Link,
+	})
+}
+
 // Webhook receives Razorpay subscription events. It is PUBLIC and PLAINTEXT by
 // necessity — Razorpay's servers call it and can't perform our E2E handshake —
 // so it is authenticated by the HMAC-SHA256 signature in X-Razorpay-Signature
