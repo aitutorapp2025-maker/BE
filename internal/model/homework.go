@@ -13,6 +13,9 @@ type Homework struct {
 	Summary   string         `gorm:"type:text" json:"summary"`
 	ImageURL  string         `gorm:"size:400" json:"image_url"`
 	Status    string         `gorm:"size:20;not null;default:new" json:"status"` // new | in_progress | done
+	// TestQuestions caches the AI-generated written/oral test (JSON) so re-taking
+	// doesn't re-hit the AI. Not serialized to the client (used server-side).
+	TestQuestions string `gorm:"type:text" json:"-"`
 	Tasks     []HomeworkTask `gorm:"foreignKey:HomeworkID" json:"tasks"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
@@ -33,7 +36,10 @@ type HomeworkTask struct {
 	// DurationMin is how long the AI suggests spending on this task; the app runs
 	// a countdown and alerts the student when the time is up (timed-task mode).
 	DurationMin int    `gorm:"not null;default:10" json:"duration_min"`
-	Status      string `gorm:"size:20;not null;default:pending" json:"status"` // pending | done
+	// Lesson caches the AI "teach" output so re-opening a task is free + instant.
+	// Not serialized to the client (the teach endpoint returns it explicitly).
+	Lesson string `gorm:"type:text" json:"-"`
+	Status string `gorm:"size:20;not null;default:pending" json:"status"` // pending | done
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }

@@ -40,6 +40,18 @@ func (r *HomeworkRepository) GetForStudent(id, studentID uint) (*model.Homework,
 	return &hw, nil
 }
 
+// SaveTaskLesson caches the AI lesson for a task.
+func (r *HomeworkRepository) SaveTaskLesson(taskID uint, lesson string) error {
+	return r.db.Model(&model.HomeworkTask{}).Where("id = ?", taskID).
+		Update("lesson", lesson).Error
+}
+
+// SaveTestQuestions caches the generated test JSON on a homework.
+func (r *HomeworkRepository) SaveTestQuestions(homeworkID uint, questions string) error {
+	return r.db.Model(&model.Homework{}).Where("id = ?", homeworkID).
+		Update("test_questions", questions).Error
+}
+
 // CreateTest saves a graded test attempt.
 func (r *HomeworkRepository) CreateTest(t *model.HomeworkTest) error {
 	return r.db.Create(t).Error

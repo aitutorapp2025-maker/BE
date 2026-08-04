@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/ai"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/media"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 )
@@ -19,55 +22,63 @@ import (
 // friendly summary and splits it into a handful of learning tasks, persisting
 // the result for the student.
 type HomeworkService struct {
-	homeworks  *repository.HomeworkRepository
-	students   *repository.StudentRepository
-	chat       *ai.Chat
-	tutor      *TutorService
-	uploadsDir string
-	publicBase string
+	homeworks   *repository.HomeworkRepository
+	students    *repository.StudentRepository
+	chat        *ai.Chat
+	tutor       *TutorService
+	privateDir  string // homework images live here (NOT publicly served)
+	publicBase  string
+	mediaSecret string // signs the private-media access URLs
 }
 
-// NewHomeworkService builds a HomeworkService. uploadsDir is where images are
-// written; publicBase is the URL prefix they're served from (/uploads). The
-// tutor powers the "teach this task" step (RAG over the student's textbooks).
+// NewHomeworkService builds a HomeworkService. privateDir is where homework
+// images are written (served only via a signed /media route); publicBase is the
+// URL base; mediaSecret signs the image URLs. The tutor powers the "teach" step.
 func NewHomeworkService(
 	homeworks *repository.HomeworkRepository,
 	students *repository.StudentRepository,
 	chat *ai.Chat,
 	tutor *TutorService,
-	uploadsDir, publicBase string,
+	privateDir, publicBase, mediaSecret string,
 ) *HomeworkService {
 	return &HomeworkService{
-		homeworks:  homeworks,
-		students:   students,
-		chat:       chat,
-		tutor:      tutor,
-		uploadsDir: uploadsDir,
-		publicBase: publicBase,
+		homeworks:   homeworks,
+		students:    students,
+		chat:        chat,
+		tutor:       tutor,
+		privateDir:  privateDir,
+		publicBase:  publicBase,
+		mediaSecret: mediaSecret,
 	}
 }
 
 // TeachTask returns a short, grounded lesson for one task of a homework, scoped
 // to the student (class/board/medium/language). The task's title + description
 // is the topic taught.
-func (s *HomeworkService) TeachTask(ctx context.Context, studentID, homeworkID, taskID uint) (*AskResult, error) {
+// TeachTask returns a lesson for a task. It returns cached=true (and does no AI
+// call) when the lesson was already generated, so re-opening a task is free.
+func (s *HomeworkService) TeachTask(ctx context.Context, studentID, homeworkID, taskID uint) (*AskResult, bool, error) {
 	hw, err := s.homeworks.GetForStudent(homeworkID, studentID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	var topic string
+	var topic, cached string
 	for _, t := range hw.Tasks {
 		if t.ID == taskID {
 			topic = strings.TrimSpace(t.Title + ". " + t.Description)
+			cached = t.Lesson
 			break
 		}
 	}
 	if topic == "" {
-		return nil, fmt.Errorf("task not found in this homework")
+		return nil, false, fmt.Errorf("task not found in this homework")
+	}
+	if strings.TrimSpace(cached) != "" {
+		return &AskResult{Answer: cached, Grounded: true}, true, nil
 	}
 	st, err := s.students.FindByID(studentID)
 	if err != nil {
-		return nil, fmt.Errorf("student: %w", err)
+		return nil, false, fmt.Errorf("student: %w", err)
 	}
 	sc := StudentContext{
 		Class:            st.StudentClass,
@@ -76,7 +87,12 @@ func (s *HomeworkService) TeachTask(ctx context.Context, studentID, homeworkID, 
 		Group:            st.StudentGroup,
 		TeachingLanguage: st.TeachingLanguage,
 	}
-	return s.tutor.Teach(ctx, topic, sc)
+	res, err := s.tutor.Teach(ctx, topic, sc)
+	if err != nil {
+		return nil, false, err
+	}
+	_ = s.homeworks.SaveTaskLesson(taskID, res.Answer) // cache for next time
+	return res, false, nil
 }
 
 // AskDoubt answers a follow-up question about a specific task, scoped to the
@@ -300,9 +316,12 @@ func (s *HomeworkService) Sync(studentID uint, since time.Time) ([]model.Homewor
 	return s.homeworks.ChangedForStudent(studentID, since)
 }
 
-// saveImage writes the image under uploadsDir/homework/ and returns its public URL.
-func (s *HomeworkService) saveImage(data []byte, mediaType string, studentID uint) (string, error) {
-	dir := filepath.Join(s.uploadsDir, "homework")
+// saveImage writes the image under privateDir/homework/ with a random,
+// unguessable filename and returns a SIGNED URL (validated by the media route).
+// The image is never on the public /uploads mount, so it can't be enumerated or
+// fetched without the signature.
+func (s *HomeworkService) saveImage(data []byte, mediaType string, _ uint) (string, error) {
+	dir := filepath.Join(s.privateDir, "homework")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -312,12 +331,16 @@ func (s *HomeworkService) saveImage(data []byte, mediaType string, studentID uin
 	} else if strings.Contains(mediaType, "pdf") {
 		ext = ".pdf"
 	}
-	name := fmt.Sprintf("hw-%d-%d%s", studentID, time.Now().UnixNano(), ext)
+	rnd := make([]byte, 16)
+	if _, err := rand.Read(rnd); err != nil {
+		return "", err
+	}
+	name := hex.EncodeToString(rnd) + ext
 	if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 		return "", err
 	}
 	base := strings.TrimRight(s.publicBase, "/")
-	return base + "/uploads/homework/" + name, nil
+	return base + "/api/v1/media/hw/" + name + "?sig=" + media.Sign(name, s.mediaSecret), nil
 }
 
 // profileLine describes the student so the AI pitches the plan at the right level.

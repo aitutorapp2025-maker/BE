@@ -58,14 +58,16 @@ func registerRoutes(app *fiber.App, d Deps) {
 		chatClient,
 		d.Cfg.AI.TopK,
 	)
-	// Homework: Claude vision reads an uploaded photo and splits it into tasks.
-	homeworkService := service.NewHomeworkService(
-		repository.NewHomeworkRepository(d.DB), studentRepo, chatClient, tutorService,
-		d.Cfg.Uploads.Dir, d.Cfg.Uploads.PublicBaseURL)
-	homeworkHandler := handler.NewHomeworkHandler(homeworkService)
 	sessStore := session.New(d.Redis, d.Cfg.JWT.RefreshTTL)
 	authService := service.NewAuthService(adminRepo, sessStore, d.Cfg)
 	creditService := service.NewCreditService(creditRepo)
+	// Homework: Claude vision reads an uploaded photo and splits it into tasks.
+	// Images go to a PRIVATE dir served only via a signed /media route; AI actions
+	// are metered on credits and uploads are rate-limited.
+	homeworkService := service.NewHomeworkService(
+		repository.NewHomeworkRepository(d.DB), studentRepo, chatClient, tutorService,
+		d.Cfg.Uploads.PrivateDir, d.Cfg.Uploads.PublicBaseURL, d.Cfg.JWT.Secret)
+	homeworkHandler := handler.NewHomeworkHandler(homeworkService, creditService, d.Redis)
 	// Google SSO config comes from admin Settings (env client id as fallback).
 	googleProvider := service.GoogleProvider(settingRepo, d.Cfg.GoogleClientID)
 	// New students get their free trial (plan + credits) on first login.
@@ -172,6 +174,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	v1.Get("/auth-config", enc, handler.NewAuthConfigHandler(googleProvider, settingRepo).Get)
 	// Mobile app version / force-update check.
 	v1.Get("/app-version", enc, settingHandler.AppVersion)
+	// Signed access to private homework images (not on the public /uploads mount).
+	v1.Get("/media/hw/:file",
+		handler.NewMediaHandler(d.Cfg.Uploads.PrivateDir, d.Cfg.JWT.Secret).Homework)
 
 	// Student (mobile) passwordless login — OTP over SMS. Encrypted end-to-end
 	// like the other public endpoints (phone number + code stay opaque).

@@ -42,6 +42,9 @@ type Config struct {
 // image) are written and how their public URLs are built.
 type UploadsConfig struct {
 	Dir string // filesystem dir served at /uploads (default ./uploads)
+	// PrivateDir holds NON-public uploads (e.g. student homework photos) that are
+	// only served through a signed media route, never the /uploads static mount.
+	PrivateDir string
 	// PublicBaseURL is the absolute base used to build upload URLs
 	// (e.g. https://api.vahaai.com). Empty = derive from the request host.
 	PublicBaseURL string
@@ -195,6 +198,7 @@ func Load() Config {
 			WebhookSecret: env("RAZORPAY_WEBHOOK_SECRET", ""),
 		},
 		Uploads: UploadsConfig{
+			PrivateDir: env("UPLOADS_PRIVATE_DIR", "./uploads_private"),
 			Dir:           env("UPLOADS_DIR", "./uploads"),
 			PublicBaseURL: env("PUBLIC_BASE_URL", ""),
 		},

@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"encoding/base64"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -9,17 +11,62 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/gofiber/fiber/v2"
+	"github.com/redis/go-redis/v9"
 )
 
+// maxUploadsPerDay caps homework uploads per student per day (abuse guard, on
+// top of credit metering).
+const maxUploadsPerDay = 30
+
+// maxHomeworkBytes caps a decoded homework image/PDF (guards memory + cost).
+const maxHomeworkBytes = 12 << 20 // 12 MB
+
 // HomeworkHandler handles a student uploading a homework photo, which the AI
-// reads and splits into learning tasks.
+// reads and splits into learning tasks. AI actions are metered on credits and
+// uploads are rate-limited.
 type HomeworkHandler struct {
-	hw *service.HomeworkService
+	hw      *service.HomeworkService
+	credits *service.CreditService
+	rdb     *redis.Client
 }
 
 // NewHomeworkHandler builds a HomeworkHandler.
-func NewHomeworkHandler(hw *service.HomeworkService) *HomeworkHandler {
-	return &HomeworkHandler{hw: hw}
+func NewHomeworkHandler(hw *service.HomeworkService, credits *service.CreditService, rdb *redis.Client) *HomeworkHandler {
+	return &HomeworkHandler{hw: hw, credits: credits, rdb: rdb}
+}
+
+// requireCredits returns a 402 error when the student can't afford the action.
+func (h *HomeworkHandler) requireCredits(studentID uint, action string) error {
+	ok, balance, err := h.credits.CanAfford(studentID, action)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "could not check your credits")
+	}
+	if !ok {
+		return fiber.NewError(fiber.StatusPaymentRequired,
+			fmt.Sprintf("You're out of credits (%d left). Please recharge to keep learning.", balance))
+	}
+	return nil
+}
+
+// rateLimitUpload increments a per-student per-day counter and returns a 429
+// error once the daily upload cap is hit.
+func (h *HomeworkHandler) rateLimitUpload(ctx context.Context, studentID uint) error {
+	if h.rdb == nil {
+		return nil
+	}
+	key := fmt.Sprintf("hw:up:%d:%s", studentID, time.Now().UTC().Format("20060102"))
+	n, err := h.rdb.Incr(ctx, key).Result()
+	if err != nil {
+		return nil // Redis down — don't block the student
+	}
+	if n == 1 {
+		_ = h.rdb.Expire(ctx, key, 24*time.Hour).Err()
+	}
+	if n > maxUploadsPerDay {
+		return fiber.NewError(fiber.StatusTooManyRequests,
+			"You've reached today's homework upload limit. Please try again tomorrow.")
+	}
+	return nil
 }
 
 type uploadHomeworkRequest struct {
@@ -47,10 +94,21 @@ func (h *HomeworkHandler) Upload(c *fiber.Ctx) error {
 	if err != nil || len(bytes) == 0 {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid image data")
 	}
+	if len(bytes) > maxHomeworkBytes {
+		return fiber.NewError(fiber.StatusRequestEntityTooLarge,
+			"that image is too large — please use a smaller photo")
+	}
+	if err := h.rateLimitUpload(c.Context(), studentID); err != nil {
+		return err
+	}
+	if err := h.requireCredits(studentID, service.ActionHomeworkRead); err != nil {
+		return err
+	}
 	hw, err := h.hw.CreateFromImage(c.Context(), studentID, bytes, req.MediaType)
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadGateway, "could not read the homework: "+err.Error())
 	}
+	_, _ = h.credits.Charge(studentID, service.ActionHomeworkRead)
 	return c.JSON(fiber.Map{"success": true, "homework": hw})
 }
 
@@ -125,9 +183,16 @@ func (h *HomeworkHandler) Teach(c *fiber.Ctx) error {
 	if hwID == 0 || taskID == 0 {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid ids")
 	}
-	res, err := h.hw.TeachTask(c.Context(), studentID, uint(hwID), uint(taskID))
+	if err := h.requireCredits(studentID, service.ActionTeach); err != nil {
+		return err
+	}
+	res, cached, err := h.hw.TeachTask(c.Context(), studentID, uint(hwID), uint(taskID))
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadGateway, "could not teach this task: "+err.Error())
+	}
+	// Only charge when we actually called the AI (a cached lesson is free).
+	if !cached {
+		_, _ = h.credits.Charge(studentID, service.ActionTeach)
 	}
 	return c.JSON(fiber.Map{
 		"success":  true,
@@ -177,6 +242,13 @@ func (h *HomeworkHandler) GradeTest(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil || len(req.Questions) == 0 {
 		return fiber.NewError(fiber.StatusBadRequest, "questions are required")
 	}
+	gradeAction := service.ActionWrittenExam
+	if req.Kind == "oral" {
+		gradeAction = service.ActionOralExam
+	}
+	if err := h.requireCredits(studentID, gradeAction); err != nil {
+		return err
+	}
 
 	var (
 		test *model.HomeworkTest
@@ -198,6 +270,7 @@ func (h *HomeworkHandler) GradeTest(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadGateway, "could not grade the test: "+err.Error())
 	}
+	_, _ = h.credits.Charge(studentID, gradeAction)
 	return c.JSON(fiber.Map{"success": true, "test": test})
 }
 
@@ -221,10 +294,14 @@ func (h *HomeworkHandler) Doubt(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil || strings.TrimSpace(req.Question) == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "a question is required")
 	}
+	if err := h.requireCredits(studentID, service.ActionDoubt); err != nil {
+		return err
+	}
 	res, err := h.hw.AskDoubt(c.Context(), studentID, uint(hwID), uint(taskID), req.Question)
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadGateway, "could not answer: "+err.Error())
 	}
+	_, _ = h.credits.Charge(studentID, service.ActionDoubt)
 	return c.JSON(fiber.Map{"success": true, "answer": res.Answer, "grounded": res.Grounded})
 }
 

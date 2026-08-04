@@ -34,6 +34,13 @@ func (s *HomeworkService) GenerateTest(ctx context.Context, studentID, homeworkI
 	if err != nil {
 		return nil, err
 	}
+	// Return the cached test if we already generated one for this homework.
+	if strings.TrimSpace(hw.TestQuestions) != "" {
+		var cached []TestQuestion
+		if json.Unmarshal([]byte(hw.TestQuestions), &cached) == nil && len(cached) > 0 {
+			return cached, nil
+		}
+	}
 	st, err := s.students.FindByID(studentID)
 	if err != nil {
 		return nil, fmt.Errorf("student: %w", err)
@@ -81,6 +88,9 @@ the student's class. Vary difficulty. Reply in %s. Return ONLY this JSON:
 	}
 	if len(qs) == 0 {
 		return nil, fmt.Errorf("could not generate test questions")
+	}
+	if raw, err := json.Marshal(qs); err == nil {
+		_ = s.homeworks.SaveTestQuestions(hw.ID, string(raw)) // cache for next time
 	}
 	return qs, nil
 }

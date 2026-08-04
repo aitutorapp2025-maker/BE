@@ -13,6 +13,9 @@ const (
 	ActionOralExam     = "oral_exam"
 	ActionWrittenExam  = "written_exam"
 	ActionParentReport = "parent_report"
+	ActionHomeworkRead = "homework_read" // Claude vision reads + splits a homework
+	ActionTeach        = "teach"         // teach one task
+	ActionDoubt        = "doubt"         // answer a task doubt
 )
 
 // ActionCost is what one AI action costs. The invariant that guarantees ≥85%
@@ -38,6 +41,9 @@ var actionCosts = map[string]ActionCost{
 	ActionOralExam:     {Credits: 16, AICostPaise: 1600, Label: "Oral exam"},
 	ActionWrittenExam:  {Credits: 6, AICostPaise: 600, Label: "Written exam"},
 	ActionParentReport: {Credits: 2, AICostPaise: 200, Label: "Parent report"},
+	ActionHomeworkRead: {Credits: 4, AICostPaise: 400, Label: "Read homework (vision)"},
+	ActionTeach:        {Credits: 2, AICostPaise: 150, Label: "Teach a task"},
+	ActionDoubt:        {Credits: 2, AICostPaise: 150, Label: "Clear a doubt"},
 }
 
 // CostOf returns the cost of an action (zero value if unknown).
