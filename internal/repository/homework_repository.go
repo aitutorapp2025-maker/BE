@@ -68,6 +68,15 @@ func (r *HomeworkRepository) TestsForHomework(homeworkID, studentID uint) ([]mod
 	return out, err
 }
 
+// TestsForStudent returns ALL of a student's test attempts (across homeworks) in
+// one query, so the report can group them in memory instead of running a query
+// per homework (avoids an N+1).
+func (r *HomeworkRepository) TestsForStudent(studentID uint) ([]model.HomeworkTest, error) {
+	var out []model.HomeworkTest
+	err := r.db.Where("student_id = ?", studentID).Find(&out).Error
+	return out, err
+}
+
 // SetTaskStatus updates one task's status (pending|done|skipped), scoped to the
 // student via the parent homework, then recomputes the homework's own status
 // (done when every task is done/skipped, in_progress once any task is acted on)

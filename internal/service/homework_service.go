@@ -267,6 +267,17 @@ func (s *HomeworkService) Report(studentID uint) (*PerformanceReport, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Load ALL of the student's tests once, then group by homework in memory
+	// (avoids a query per homework).
+	allTests, err := s.homeworks.TestsForStudent(studentID)
+	if err != nil {
+		return nil, err
+	}
+	testsByHw := map[uint][]model.HomeworkTest{}
+	for _, t := range allTests {
+		testsByHw[t.HomeworkID] = append(testsByHw[t.HomeworkID], t)
+	}
+
 	out := &PerformanceReport{TotalHomeworks: len(hws)}
 	markSum := 0
 	for _, hw := range hws {
@@ -285,10 +296,7 @@ func (s *HomeworkService) Report(studentID uint) (*PerformanceReport, error) {
 				line.TasksSkipped++
 			}
 		}
-		tests, err := s.homeworks.TestsForHomework(hw.ID, studentID)
-		if err != nil {
-			return nil, err
-		}
+		tests := testsByHw[hw.ID]
 		if len(tests) > 0 {
 			pctSum := 0
 			for _, t := range tests {

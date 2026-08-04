@@ -36,6 +36,8 @@ func Connect(cfg config.Config) (*gorm.DB, error) {
 	db, err := gorm.Open(postgres.Open(cfg.DB.DSN()), &gorm.Config{
 		Logger:                                   gormLog,
 		DisableForeignKeyConstraintWhenMigrating: false,
+		// Cache prepared statements so repeated queries skip parse/plan overhead.
+		PrepareStmt: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gorm open: %w", err)

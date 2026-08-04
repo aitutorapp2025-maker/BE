@@ -41,13 +41,28 @@ var (
 	validPayStat = map[string]bool{"trial": true, "paid": true, "expired": true}
 )
 
-// List returns all students. GET /api/v1/admin/students
+// List returns a page of students. GET /api/v1/admin/students?page=1&page_size=50&q=
 func (h *StudentHandler) List(c *fiber.Ctx) error {
-	students, err := h.students.List()
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	size, _ := strconv.Atoi(c.Query("page_size", "50"))
+	if size < 1 || size > 200 {
+		size = 50
+	}
+	search := strings.TrimSpace(c.Query("q"))
+	students, total, err := h.students.ListPaged(size, (page-1)*size, search)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to load students")
 	}
-	return c.JSON(fiber.Map{"success": true, "students": students})
+	return c.JSON(fiber.Map{
+		"success":   true,
+		"students":  students,
+		"total":     total,
+		"page":      page,
+		"page_size": size,
+	})
 }
 
 // Get returns a single student. GET /api/v1/admin/students/:id

@@ -25,6 +25,26 @@ func (r *StudentRepository) List() ([]model.Student, error) {
 	return students, err
 }
 
+// ListPaged returns a page of students (newest first) plus the total count. An
+// optional search matches name/phone/email. Avoids loading every student row.
+func (r *StudentRepository) ListPaged(limit, offset int, search string) ([]model.Student, int64, error) {
+	q := r.db.Model(&model.Student{})
+	if search != "" {
+		like := "%" + search + "%"
+		q = q.Where("name ILIKE ? OR phone ILIKE ? OR email ILIKE ?", like, like, like)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	var students []model.Student
+	err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&students).Error
+	return students, total, err
+}
+
 // FindByID returns a student by id, or ErrNotFound.
 func (r *StudentRepository) FindByID(id uint) (*model.Student, error) {
 	var s model.Student

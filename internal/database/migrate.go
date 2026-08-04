@@ -66,6 +66,11 @@ func MigrateVectors(db *gorm.DB) (bool, error) {
 	// Best-effort: on older pgvector the CREATE fails and we fall back to a scan.
 	_ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_book_chunks_embedding ` +
 		`ON book_chunks USING hnsw (embedding vector_cosine_ops)`).Error
+	// The RAG query filters by class+medium before ordering by vector distance;
+	// a btree on the filter columns gives the planner a fast filtered path (HNSW
+	// alone doesn't filter well). Best-effort.
+	_ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_book_chunks_class_medium ` +
+		`ON book_chunks (class_name, medium)`).Error
 	return true, nil
 }
 

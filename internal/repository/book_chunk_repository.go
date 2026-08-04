@@ -54,13 +54,19 @@ func (r *BookChunkRepository) Search(query ai.Vector, className, medium, subject
 	if topK <= 0 {
 		topK = 6
 	}
-	q := r.db.Model(&model.BookChunk{}).
-		Select("book_title, subject, content, (embedding <=> ?) AS distance", query.Literal()).
-		Where("class_name = ? AND medium = ?", className, medium)
-	if subject != "" {
-		q = q.Where("subject = ?", subject)
-	}
 	var out []RetrievedChunk
-	err := q.Order("distance ASC").Limit(topK).Scan(&out).Error
+	// Run in a transaction so SET LOCAL hnsw.ef_search applies only to this query
+	// (pool-safe). A higher ef_search keeps recall up when the class+medium filter
+	// eliminates many HNSW candidates, so we still get a full topK of good matches.
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		tx.Exec("SET LOCAL hnsw.ef_search = 100")
+		q := tx.Model(&model.BookChunk{}).
+			Select("book_title, subject, content, (embedding <=> ?) AS distance", query.Literal()).
+			Where("class_name = ? AND medium = ?", className, medium)
+		if subject != "" {
+			q = q.Where("subject = ?", subject)
+		}
+		return q.Order("distance ASC").Limit(topK).Scan(&out).Error
+	})
 	return out, err
 }
