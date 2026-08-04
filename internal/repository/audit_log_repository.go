@@ -22,6 +22,13 @@ func (r *AuditLogRepository) Record(a *model.AuditLog) error {
 	return r.db.Create(a).Error
 }
 
+// DeleteOlderThan removes audit entries created before [cutoff] and returns how
+// many were deleted (used by the retention cleanup cron).
+func (r *AuditLogRepository) DeleteOlderThan(cutoff time.Time) (int64, error) {
+	res := r.db.Where("created_at < ?", cutoff).Delete(&model.AuditLog{})
+	return res.RowsAffected, res.Error
+}
+
 // List returns audit entries filtered by actor type (empty = all) and an
 // optional time window, newest first, paginated. Returns the page + total count.
 func (r *AuditLogRepository) List(actorType string, from, to time.Time, limit, offset int) ([]model.AuditLog, int64, error) {

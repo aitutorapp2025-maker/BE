@@ -10,6 +10,22 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 )
 
+// CleanupAuditLogsJob deletes audit entries older than the retention window (90
+// days). Runs once per calendar day.
+func CleanupAuditLogsJob(audits *repository.AuditLogRepository) Job {
+	return Job{
+		Key:      "cleanup_audit_logs",
+		Schedule: "daily",
+		Run: func(now time.Time) (string, error) {
+			n, err := audits.DeleteOlderThan(now.AddDate(0, 0, -90))
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("deleted %d old audit log(s)", n), nil
+		},
+	}
+}
+
 // ChargeDueMandatesJob triggers the recurring UPI auto-debit for students whose
 // headless mandate is authorized and whose next charge is due. Idempotent (each
 // debit is confirmed + granted via webhook), so it runs every tick.

@@ -244,6 +244,9 @@ func main() {
 		{scheduler.ChargeDueMandatesJob(paymentService),
 			"Charge due autopay mandates",
 			"Auto-debits due UPI-AutoPay mandates (headless flow) and grants plan credits."},
+		{scheduler.CleanupAuditLogsJob(repository.NewAuditLogRepository(db)),
+			"Cleanup audit logs",
+			"Deletes audit-log entries older than 90 days (retention)."},
 	}
 	for _, r := range registrations {
 		if err := cronRepo.Ensure(model.CronJob{

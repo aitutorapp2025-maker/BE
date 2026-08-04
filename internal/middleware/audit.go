@@ -17,9 +17,19 @@ type AuditEntry struct {
 // middleware (so the actor locals are set) and captures the resolved status even
 // when the handler returned an error. Unauthenticated requests are skipped. The
 // recorder should persist asynchronously so it never blocks the response.
+// auditSkip lists high-frequency background paths not worth recording (they'd
+// flood the trail with polling noise without reflecting a user "action").
+var auditSkip = map[string]bool{
+	"/api/v1/student/sync": true,
+}
+
 func Audit(record func(AuditEntry)) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		err := c.Next()
+
+		if auditSkip[c.Path()] {
+			return err
+		}
 
 		e := AuditEntry{
 			Method: c.Method(),
