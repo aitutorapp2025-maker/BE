@@ -181,6 +181,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Homework: upload a photo → AI reads it and splits it into tasks.
 	studentProtected.Post("/homework", homeworkHandler.Upload)
 	studentProtected.Get("/homework", homeworkHandler.List)
+	// Delta sync for local-first history (Drift/SQLite on the device).
+	studentProtected.Post("/sync", homeworkHandler.Sync)
 	studentProtected.Get("/homework/:id", homeworkHandler.Get)
 	// Start a UPI-AutoPay subscription (returns the Razorpay checkout link).
 	studentProtected.Post("/subscribe", paymentHandler.Subscribe)

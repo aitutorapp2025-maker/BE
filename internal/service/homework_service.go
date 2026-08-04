@@ -134,6 +134,12 @@ func (s *HomeworkService) Get(id, studentID uint) (*model.Homework, error) {
 	return s.homeworks.GetForStudent(id, studentID)
 }
 
+// Sync returns the homeworks (with tasks) changed since `since` for local-first
+// delta sync. A zero `since` returns the full history.
+func (s *HomeworkService) Sync(studentID uint, since time.Time) ([]model.Homework, error) {
+	return s.homeworks.ChangedForStudent(studentID, since)
+}
+
 // saveImage writes the image under uploadsDir/homework/ and returns its public URL.
 func (s *HomeworkService) saveImage(data []byte, mediaType string, studentID uint) (string, error) {
 	dir := filepath.Join(s.uploadsDir, "homework")

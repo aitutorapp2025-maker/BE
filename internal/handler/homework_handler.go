@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/gofiber/fiber/v2"
@@ -64,6 +65,37 @@ func (h *HomeworkHandler) List(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "could not load homeworks")
 	}
 	return c.JSON(fiber.Map{"success": true, "homeworks": list})
+}
+
+type syncRequest struct {
+	Since int64 `json:"since"` // unix ms of the client's last sync (0 = full)
+}
+
+// Sync returns the homeworks (with tasks) changed since the client's last sync,
+// so the app keeps a local-first copy of the student's history and only pulls
+// the delta. The response includes server_time (ms) which the client stores as
+// the next `since`. POST (not GET) so the signed/E2E body carries `since`.
+// POST /api/v1/student/sync  { "since": <ms> }
+func (h *HomeworkHandler) Sync(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	var req syncRequest
+	_ = c.BodyParser(&req)
+	var since time.Time
+	if req.Since > 0 {
+		since = time.UnixMilli(req.Since)
+	}
+	list, err := h.hw.Sync(studentID, since)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "sync failed")
+	}
+	return c.JSON(fiber.Map{
+		"success":     true,
+		"homeworks":   list,
+		"server_time": time.Now().UnixMilli(),
+	})
 }
 
 // Get returns one homework (with tasks) scoped to the student.
