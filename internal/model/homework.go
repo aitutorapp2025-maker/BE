@@ -37,3 +37,22 @@ type HomeworkTask struct {
 
 // TableName sets the table name explicitly.
 func (HomeworkTask) TableName() string { return "homework_tasks" }
+
+// HomeworkTest is a graded test attempt on a homework (written or oral). Marks
+// count only completed tests — a skipped test simply has no row. Detail holds
+// the per-question breakdown as JSON so the report can show it.
+type HomeworkTest struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	HomeworkID uint      `gorm:"index;not null" json:"homework_id"`
+	StudentID  uint      `gorm:"index;not null" json:"student_id"`
+	Kind       string    `gorm:"size:20;not null;default:written" json:"kind"` // written | oral
+	Score      int       `gorm:"not null;default:0" json:"score"`
+	MaxScore   int       `gorm:"not null;default:0" json:"max_score"`
+	Summary    string    `gorm:"type:text" json:"summary"`
+	Detail     string    `gorm:"type:text" json:"detail"` // JSON: per-question marks + feedback
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// TableName sets the table name explicitly.
+func (HomeworkTest) TableName() string { return "homework_tests" }

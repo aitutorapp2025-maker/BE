@@ -189,6 +189,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Post("/homework/:id/tasks/:taskId/teach", homeworkHandler.Teach)
 	// Clear a doubt about one task (grounded Q&A in the student's language).
 	studentProtected.Post("/homework/:id/tasks/:taskId/doubt", homeworkHandler.Doubt)
+	// Written test: generate questions, then grade typed or handwritten answers.
+	studentProtected.Post("/homework/:id/test", homeworkHandler.GenerateTest)
+	studentProtected.Post("/homework/:id/test/grade", homeworkHandler.GradeTest)
 	studentProtected.Get("/homework/:id", homeworkHandler.Get)
 	// Start a UPI-AutoPay subscription (returns the Razorpay checkout link).
 	studentProtected.Post("/subscribe", paymentHandler.Subscribe)

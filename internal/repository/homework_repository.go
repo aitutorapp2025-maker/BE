@@ -40,6 +40,22 @@ func (r *HomeworkRepository) GetForStudent(id, studentID uint) (*model.Homework,
 	return &hw, nil
 }
 
+// CreateTest saves a graded test attempt.
+func (r *HomeworkRepository) CreateTest(t *model.HomeworkTest) error {
+	return r.db.Create(t).Error
+}
+
+// TestsForHomework returns the test attempts for a homework, scoped to the
+// student (newest first) — used by the marks/report.
+func (r *HomeworkRepository) TestsForHomework(homeworkID, studentID uint) ([]model.HomeworkTest, error) {
+	var out []model.HomeworkTest
+	err := r.db.
+		Where("homework_id = ? AND student_id = ?", homeworkID, studentID).
+		Order("created_at DESC").
+		Find(&out).Error
+	return out, err
+}
+
 // SetTaskStatus updates one task's status (pending|done|skipped), scoped to the
 // student via the parent homework, then recomputes the homework's own status
 // (done when every task is done/skipped, in_progress once any task is acted on)

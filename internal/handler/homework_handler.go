@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/gofiber/fiber/v2"
 )
@@ -119,6 +120,70 @@ func (h *HomeworkHandler) Teach(c *fiber.Ctx) error {
 		"lesson":   res.Answer,
 		"grounded": res.Grounded,
 	})
+}
+
+// GenerateTest returns a short written test for the homework (Phase 5).
+// POST /api/v1/student/homework/:id/test
+func (h *HomeworkHandler) GenerateTest(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	hwID, _ := strconv.ParseUint(c.Params("id"), 10, 64)
+	if hwID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid homework id")
+	}
+	qs, err := h.hw.GenerateTest(c.Context(), studentID, uint(hwID))
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadGateway, "could not create the test: "+err.Error())
+	}
+	return c.JSON(fiber.Map{"success": true, "questions": qs})
+}
+
+type gradeTestRequest struct {
+	Questions []service.TestQuestion `json:"questions"`
+	Answers   []string               `json:"answers"`    // typed answers (parallel to questions)
+	Image     string                 `json:"image"`      // base64 handwritten answer sheet (optional)
+	MediaType string                 `json:"media_type"` // for the image
+}
+
+// GradeTest grades the student's answers — typed, or a handwritten photo read by
+// Claude vision — and stores the result. POST /api/v1/student/homework/:id/test/grade
+func (h *HomeworkHandler) GradeTest(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	hwID, _ := strconv.ParseUint(c.Params("id"), 10, 64)
+	if hwID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid homework id")
+	}
+	var req gradeTestRequest
+	if err := c.BodyParser(&req); err != nil || len(req.Questions) == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "questions are required")
+	}
+
+	var (
+		test *model.HomeworkTest
+		err  error
+	)
+	if strings.TrimSpace(req.Image) != "" {
+		img := req.Image
+		if i := strings.Index(img, ","); strings.HasPrefix(img, "data:") && i > 0 {
+			img = img[i+1:]
+		}
+		bytes, derr := base64.StdEncoding.DecodeString(strings.TrimSpace(img))
+		if derr != nil || len(bytes) == 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "invalid image data")
+		}
+		test, err = h.hw.GradeWrittenImage(c.Context(), studentID, uint(hwID), req.Questions, bytes, req.MediaType)
+	} else {
+		test, err = h.hw.GradeWritten(c.Context(), studentID, uint(hwID), req.Questions, req.Answers)
+	}
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadGateway, "could not grade the test: "+err.Error())
+	}
+	return c.JSON(fiber.Map{"success": true, "test": test})
 }
 
 type doubtRequest struct {
