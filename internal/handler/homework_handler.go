@@ -121,6 +121,33 @@ func (h *HomeworkHandler) Teach(c *fiber.Ctx) error {
 	})
 }
 
+type doubtRequest struct {
+	Question string `json:"question"`
+}
+
+// Doubt answers a follow-up question about one task (Phase 4 — doubt clearing).
+// POST /api/v1/student/homework/:id/tasks/:taskId/doubt  { "question": "..." }
+func (h *HomeworkHandler) Doubt(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	hwID, _ := strconv.ParseUint(c.Params("id"), 10, 64)
+	taskID, _ := strconv.ParseUint(c.Params("taskId"), 10, 64)
+	if hwID == 0 || taskID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid ids")
+	}
+	var req doubtRequest
+	if err := c.BodyParser(&req); err != nil || strings.TrimSpace(req.Question) == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "a question is required")
+	}
+	res, err := h.hw.AskDoubt(c.Context(), studentID, uint(hwID), uint(taskID), req.Question)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadGateway, "could not answer: "+err.Error())
+	}
+	return c.JSON(fiber.Map{"success": true, "answer": res.Answer, "grounded": res.Grounded})
+}
+
 type taskStatusRequest struct {
 	Status string `json:"status"` // pending | done | skipped
 }

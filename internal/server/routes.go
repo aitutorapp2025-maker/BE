@@ -187,6 +187,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Put("/homework/:id/tasks/:taskId", homeworkHandler.SetTaskStatus)
 	// Teach one task (RAG lesson in the student's language).
 	studentProtected.Post("/homework/:id/tasks/:taskId/teach", homeworkHandler.Teach)
+	// Clear a doubt about one task (grounded Q&A in the student's language).
+	studentProtected.Post("/homework/:id/tasks/:taskId/doubt", homeworkHandler.Doubt)
 	studentProtected.Get("/homework/:id", homeworkHandler.Get)
 	// Start a UPI-AutoPay subscription (returns the Razorpay checkout link).
 	studentProtected.Post("/subscribe", paymentHandler.Subscribe)

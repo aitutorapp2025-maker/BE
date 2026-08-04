@@ -165,6 +165,30 @@ func (s *TutorService) Teach(ctx context.Context, topic string, sc StudentContex
 	return &AskResult{Answer: strings.TrimSpace(lesson), Sources: sources, Grounded: len(sources) > 0}, nil
 }
 
+// AnswerDoubt answers a student's follow-up question about a specific homework
+// task, grounded in their textbooks when a passage matches, in their language.
+// More conversational than Ask (it always tries to help with the doubt), but
+// still leans on the textbook and won't invent facts that contradict it.
+func (s *TutorService) AnswerDoubt(ctx context.Context, topic, question string, sc StudentContext) (*AskResult, error) {
+	question = strings.TrimSpace(question)
+	if question == "" {
+		return nil, fmt.Errorf("empty question")
+	}
+	qv, err := s.embedder.EmbedQuery(ctx, topic+" "+question)
+	if err != nil {
+		return nil, fmt.Errorf("embed doubt: %w", err)
+	}
+	sources, err := s.chunks.Search(qv, sc.Class, sc.Medium, "", s.topK)
+	if err != nil {
+		return nil, fmt.Errorf("retrieve: %w", err)
+	}
+	answer, err := s.chat.Complete(ctx, doubtSystemPrompt(sc), buildDoubtPrompt(topic, question, sources))
+	if err != nil {
+		return nil, fmt.Errorf("answer doubt: %w", err)
+	}
+	return &AskResult{Answer: strings.TrimSpace(answer), Sources: sources, Grounded: len(sources) > 0}, nil
+}
+
 // Probe verifies the configured AI keys with a tiny round-trip: one embedding
 // (Voyage) and one short completion (Claude). Used by the admin "Test AI" button
 // so keys can be validated before books are ingested. Returns a clear error if
@@ -249,6 +273,37 @@ func buildTeachPrompt(topic string, sources []repository.RetrievedChunk) string 
 	}
 	b.WriteString("Homework task to teach:\n")
 	b.WriteString(topic)
+	return b.String()
+}
+
+func doubtSystemPrompt(sc StudentContext) string {
+	lang := sc.TeachingLanguage
+	if lang == "" {
+		lang = "the student's medium of instruction"
+	}
+	return fmt.Sprintf(`You are Vaha, a friendly, patient tutor for an Indian school student in %s, `+
+		`%s board, %s medium. The student is working on a homework task and has a DOUBT.
+
+Answer the doubt clearly and simply. Rules:
+- Reply in %s, in a warm, encouraging tone the student can follow.
+- Use the textbook passages when they help; you may add gentle standard explanation, but never contradict the textbook or invent facts.
+- Keep it short and focused on the doubt. Give a small example if it helps.
+- Never mention "passages", "context" or that you were given excerpts — just answer.`,
+		sc.Class, boardOrDefault(sc.Board), mediumOrDefault(sc.Medium), lang)
+}
+
+func buildDoubtPrompt(topic, question string, sources []repository.RetrievedChunk) string {
+	var b strings.Builder
+	if len(sources) > 0 {
+		b.WriteString("Textbook passages (use where relevant):\n\n")
+		for i, src := range sources {
+			fmt.Fprintf(&b, "[%d] (%s — %s)\n%s\n\n", i+1, src.Subject, src.BookTitle, src.Content)
+		}
+	}
+	b.WriteString("Homework task: ")
+	b.WriteString(topic)
+	b.WriteString("\n\nStudent's doubt: ")
+	b.WriteString(question)
 	return b.String()
 }
 

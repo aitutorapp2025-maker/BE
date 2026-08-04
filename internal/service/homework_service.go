@@ -79,6 +79,37 @@ func (s *HomeworkService) TeachTask(ctx context.Context, studentID, homeworkID, 
 	return s.tutor.Teach(ctx, topic, sc)
 }
 
+// AskDoubt answers a follow-up question about a specific task, scoped to the
+// student and grounded in their textbooks.
+func (s *HomeworkService) AskDoubt(ctx context.Context, studentID, homeworkID, taskID uint, question string) (*AskResult, error) {
+	hw, err := s.homeworks.GetForStudent(homeworkID, studentID)
+	if err != nil {
+		return nil, err
+	}
+	var topic string
+	for _, t := range hw.Tasks {
+		if t.ID == taskID {
+			topic = strings.TrimSpace(t.Title + ". " + t.Description)
+			break
+		}
+	}
+	if topic == "" {
+		return nil, fmt.Errorf("task not found in this homework")
+	}
+	st, err := s.students.FindByID(studentID)
+	if err != nil {
+		return nil, fmt.Errorf("student: %w", err)
+	}
+	sc := StudentContext{
+		Class:            st.StudentClass,
+		Medium:           st.Medium,
+		Board:            st.Board,
+		Group:            st.StudentGroup,
+		TeachingLanguage: st.TeachingLanguage,
+	}
+	return s.tutor.AnswerDoubt(ctx, topic, question, sc)
+}
+
 // aiHomework is the JSON shape we ask Claude to return.
 type aiHomework struct {
 	Subject string `json:"subject"`
