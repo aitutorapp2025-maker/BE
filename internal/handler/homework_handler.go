@@ -156,9 +156,10 @@ func (h *HomeworkHandler) GenerateTest(c *fiber.Ctx) error {
 
 type gradeTestRequest struct {
 	Questions []service.TestQuestion `json:"questions"`
-	Answers   []string               `json:"answers"`    // typed answers (parallel to questions)
+	Answers   []string               `json:"answers"`    // typed answers or speech transcripts
 	Image     string                 `json:"image"`      // base64 handwritten answer sheet (optional)
 	MediaType string                 `json:"media_type"` // for the image
+	Kind      string                 `json:"kind"`       // written | oral (text answers)
 }
 
 // GradeTest grades the student's answers — typed, or a handwritten photo read by
@@ -192,7 +193,7 @@ func (h *HomeworkHandler) GradeTest(c *fiber.Ctx) error {
 		}
 		test, err = h.hw.GradeWrittenImage(c.Context(), studentID, uint(hwID), req.Questions, bytes, req.MediaType)
 	} else {
-		test, err = h.hw.GradeWritten(c.Context(), studentID, uint(hwID), req.Questions, req.Answers)
+		test, err = h.hw.GradeWritten(c.Context(), studentID, uint(hwID), req.Questions, req.Answers, req.Kind)
 	}
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadGateway, "could not grade the test: "+err.Error())

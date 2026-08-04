@@ -85,8 +85,9 @@ the student's class. Vary difficulty. Reply in %s. Return ONLY this JSON:
 	return qs, nil
 }
 
-// GradeWritten grades typed answers to the given questions and stores the result.
-func (s *HomeworkService) GradeWritten(ctx context.Context, studentID, homeworkID uint, questions []TestQuestion, answers []string) (*model.HomeworkTest, error) {
+// GradeWritten grades text answers (typed, or speech-to-text transcripts for an
+// oral test — set kind to "written" or "oral") and stores the result.
+func (s *HomeworkService) GradeWritten(ctx context.Context, studentID, homeworkID uint, questions []TestQuestion, answers []string, kind string) (*model.HomeworkTest, error) {
 	st, err := s.students.FindByID(studentID)
 	if err != nil {
 		return nil, fmt.Errorf("student: %w", err)
@@ -102,7 +103,7 @@ func (s *HomeworkService) GradeWritten(ctx context.Context, studentID, homeworkI
 		}
 		fmt.Fprintf(&qa, "Q%d (%d marks): %s\nStudent's answer: %s\n\n", q.N, q.Marks, q.Question, ans)
 	}
-	return s.grade(ctx, st, homeworkID, questions, qa.String(), "", "")
+	return s.grade(ctx, st, homeworkID, questions, qa.String(), "", "", kind)
 }
 
 // GradeWrittenImage grades a photo of the student's handwritten answer sheet
@@ -120,12 +121,15 @@ func (s *HomeworkService) GradeWrittenImage(ctx context.Context, studentID, home
 		fmt.Fprintf(&qs, "Q%d (%d marks): %s\n", q.N, q.Marks, q.Question)
 	}
 	img := base64.StdEncoding.EncodeToString(imageBytes)
-	return s.grade(ctx, st, homeworkID, questions, qs.String(), img, mediaType)
+	return s.grade(ctx, st, homeworkID, questions, qs.String(), img, mediaType, "written")
 }
 
 // grade runs the grading prompt (text, or vision when img is set), builds the
 // score, and persists the HomeworkTest. It returns the stored test.
-func (s *HomeworkService) grade(ctx context.Context, st *model.Student, homeworkID uint, questions []TestQuestion, qaBlock, imgB64, mediaType string) (*model.HomeworkTest, error) {
+func (s *HomeworkService) grade(ctx context.Context, st *model.Student, homeworkID uint, questions []TestQuestion, qaBlock, imgB64, mediaType, kind string) (*model.HomeworkTest, error) {
+	if kind != "oral" {
+		kind = "written"
+	}
 	maxScore := 0
 	for _, q := range questions {
 		maxScore += q.Marks
@@ -178,7 +182,7 @@ Questions%s:
 	test := &model.HomeworkTest{
 		HomeworkID: homeworkID,
 		StudentID:  st.ID,
-		Kind:       "written",
+		Kind:       kind,
 		Score:      score,
 		MaxScore:   maxScore,
 		Summary:    strings.TrimSpace(g.Summary),
