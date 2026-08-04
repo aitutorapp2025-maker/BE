@@ -179,7 +179,7 @@ func main() {
 		bookChunkRepo := repository.NewBookChunkRepository(db)
 		tutorService := service.NewTutorService(
 			bookRepo, bookChunkRepo,
-			ai.NewEmbedder(aiProvider),
+			ai.NewEmbedder(aiProvider, rdb),
 			ai.NewChat(aiProvider),
 			cfg.AI.TopK,
 		)

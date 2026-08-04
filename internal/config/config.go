@@ -59,6 +59,11 @@ type AIConfig struct {
 	VoyageKey      string
 	VoyageModel    string // e.g. voyage-3
 	EmbedDim       int    // embedding dimension (must match the vector column)
+	// EmbedProvider selects the embeddings backend: "voyage" (cloud API) or
+	// "local" (self-hosted BGE-M3 via an Ollama-style /api/embed endpoint).
+	EmbedProvider   string
+	LocalEmbedURL   string // e.g. http://localhost:11434/api/embed (Ollama)
+	LocalEmbedModel string // e.g. bge-m3
 	// TopK is how many textbook passages to retrieve per question.
 	TopK int
 }
@@ -188,9 +193,12 @@ func Load() Config {
 			AnthropicKey:   env("ANTHROPIC_API_KEY", ""),
 			AnthropicModel: env("ANTHROPIC_MODEL", "claude-sonnet-5"),
 			VoyageKey:      env("VOYAGE_API_KEY", ""),
-			VoyageModel:    env("VOYAGE_MODEL", "voyage-3"),
-			EmbedDim:       envInt("AI_EMBED_DIM", 1024),
-			TopK:           envInt("AI_TOP_K", 6),
+			VoyageModel:     env("VOYAGE_MODEL", "voyage-3"),
+			EmbedDim:        envInt("AI_EMBED_DIM", 1024),
+			EmbedProvider:   env("EMBED_PROVIDER", "voyage"),
+			LocalEmbedURL:   env("LOCAL_EMBED_URL", "http://localhost:11434/api/embed"),
+			LocalEmbedModel: env("LOCAL_EMBED_MODEL", "bge-m3"),
+			TopK:            envInt("AI_TOP_K", 6),
 		},
 		Razorpay: RazorpayConfig{
 			KeyID:         env("RAZORPAY_KEY_ID", ""),

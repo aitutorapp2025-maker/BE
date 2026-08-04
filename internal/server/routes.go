@@ -54,7 +54,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	chatClient := ai.NewChat(aiProvider)
 	tutorService := service.NewTutorService(
 		bookRepo, bookChunkRepo,
-		ai.NewEmbedder(aiProvider),
+		ai.NewEmbedder(aiProvider, d.Redis),
 		chatClient,
 		d.Cfg.AI.TopK,
 	)
