@@ -61,7 +61,41 @@ func MigrateVectors(db *gorm.DB) (bool, error) {
 	if err := db.AutoMigrate(&model.BookChunk{}); err != nil {
 		return false, err
 	}
+	// ANN index for fast RAG similarity search — without it, every question scans
+	// all chunks. HNSW (pgvector ≥ 0.5) with cosine ops matches the `<=>` query.
+	// Best-effort: on older pgvector the CREATE fails and we fall back to a scan.
+	_ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_book_chunks_embedding ` +
+		`ON book_chunks USING hnsw (embedding vector_cosine_ops)`).Error
 	return true, nil
+}
+
+// CreateIndexes adds performance indexes that GORM struct tags can't express
+// (composite indexes on the hottest queries). Idempotent + best-effort: each
+// statement runs independently, so one failure never blocks the others or boot.
+// Returns the first error (for a warning log), if any.
+func CreateIndexes(db *gorm.DB) error {
+	stmts := []string{
+		// OTP login looks a student up by phone.
+		`CREATE INDEX IF NOT EXISTS idx_students_phone ON students (phone)`,
+		// Admin audit viewer: filter by actor_type, newest first.
+		`CREATE INDEX IF NOT EXISTS idx_audit_actor_created ON audit_logs (actor_type, created_at DESC)`,
+		// Homework history list + delta sync, per student.
+		`CREATE INDEX IF NOT EXISTS idx_homeworks_student_created ON homeworks (student_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_homeworks_student_updated ON homeworks (student_id, updated_at)`,
+		// Tasks ordered within a homework (preload order_no).
+		`CREATE INDEX IF NOT EXISTS idx_hw_tasks_hw_order ON homework_tasks (homework_id, order_no)`,
+		// Tests for a homework scoped to a student.
+		`CREATE INDEX IF NOT EXISTS idx_hw_tests_hw_student ON homework_tests (homework_id, student_id)`,
+		// Recent credit ledger entries per student.
+		`CREATE INDEX IF NOT EXISTS idx_credit_student_created ON credit_ledger (student_id, created_at DESC)`,
+	}
+	var firstErr error
+	for _, s := range stmts {
+		if err := db.Exec(s).Error; err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 // SeedTeachingLanguages inserts the default teaching languages if none exist.

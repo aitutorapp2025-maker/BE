@@ -48,6 +48,12 @@ func main() {
 	}
 	log.Infof("database migrated")
 
+	// Performance indexes (composite indexes on hot queries). Best-effort — a
+	// failure here is a warning, not fatal.
+	if err := database.CreateIndexes(db); err != nil {
+		log.Warnf("some performance indexes were not created: %v", err)
+	}
+
 	// Vector store for the tutoring pipeline — only if pgvector is installed on
 	// the PostgreSQL server. When it isn't, the AI features stay off but the app
 	// still boots (the worker/route degrade to a clear "not configured" error).
