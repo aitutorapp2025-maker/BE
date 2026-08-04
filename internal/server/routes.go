@@ -131,6 +131,24 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Anonymous E2E handshake so public endpoints can be encrypted too.
 	v1.Post("/handshake", handshakeHandler.Handshake)
 
+	// Audit trail: record every authenticated action (admin + student streams).
+	// The recorder persists asynchronously so it never blocks the response.
+	auditRepo := repository.NewAuditLogRepository(d.DB)
+	auditRecord := func(e middleware.AuditEntry) {
+		go func() {
+			_ = auditRepo.Record(&model.AuditLog{
+				ActorType:  e.ActorType,
+				ActorID:    e.ActorID,
+				ActorLabel: e.ActorLabel,
+				Method:     e.Method,
+				Path:       e.Path,
+				Status:     e.Status,
+				IP:         e.IP,
+			})
+		}()
+	}
+	audit := middleware.Audit(auditRecord)
+
 	// Public endpoints — encrypted for clients that completed the anon handshake
 	// (the Encrypt middleware reads the X-Session header).
 	enc := middleware.Encrypt(sessStore)
@@ -169,7 +187,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// signature) with end-to-end encrypted payloads.
 	studentProtected := student.Group("",
 		middleware.SignedStudent(d.Cfg, sessStore),
-		middleware.Encrypt(sessStore))
+		middleware.Encrypt(sessStore),
+		audit)
 	studentProtected.Get("/me", studentAuthHandler.Me)
 	studentProtected.Put("/profile", studentAuthHandler.UpdateProfile)
 	// Soft-delete the account (kept for audit, hidden everywhere; re-register
@@ -230,7 +249,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// sessions that completed the E2E key exchange.
 	adminProtected := admin.Group("",
 		middleware.SignedAdmin(d.Cfg, sessStore),
-		middleware.Encrypt(sessStore))
+		middleware.Encrypt(sessStore),
+		audit)
 	adminProtected.Get("/me", adminAuthHandler.Me)
 	adminProtected.Post("/logout", adminAuthHandler.Logout)
 	adminProtected.Post("/change-password", adminAuthHandler.ChangePassword)
@@ -255,6 +275,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// queued on RabbitMQ and delivered by the push worker.
 	pushPublisher := fcm.NewPublisher(d.MQ, func() bool { return d.Push.Enabled() })
 	notificationHandler := handler.NewNotificationHandler(pushPublisher)
+	// Audit logs — admin views the admin + student activity streams.
+	adminProtected.Get("/audit-logs", handler.NewAuditLogHandler(auditRepo).List)
 	adminProtected.Post("/notifications/send", notificationHandler.Send)
 	adminProtected.Post("/notifications/image", uploadHandler.UploadNotificationImage)
 

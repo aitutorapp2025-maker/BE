@@ -44,6 +44,7 @@ func Migrate(db *gorm.DB) error {
 		&model.Homework{},
 		&model.HomeworkTask{},
 		&model.HomeworkTest{},
+		&model.AuditLog{},
 	)
 }
 
