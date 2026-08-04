@@ -22,25 +22,61 @@ type HomeworkService struct {
 	homeworks  *repository.HomeworkRepository
 	students   *repository.StudentRepository
 	chat       *ai.Chat
+	tutor      *TutorService
 	uploadsDir string
 	publicBase string
 }
 
 // NewHomeworkService builds a HomeworkService. uploadsDir is where images are
-// written; publicBase is the URL prefix they're served from (/uploads).
+// written; publicBase is the URL prefix they're served from (/uploads). The
+// tutor powers the "teach this task" step (RAG over the student's textbooks).
 func NewHomeworkService(
 	homeworks *repository.HomeworkRepository,
 	students *repository.StudentRepository,
 	chat *ai.Chat,
+	tutor *TutorService,
 	uploadsDir, publicBase string,
 ) *HomeworkService {
 	return &HomeworkService{
 		homeworks:  homeworks,
 		students:   students,
 		chat:       chat,
+		tutor:      tutor,
 		uploadsDir: uploadsDir,
 		publicBase: publicBase,
 	}
+}
+
+// TeachTask returns a short, grounded lesson for one task of a homework, scoped
+// to the student (class/board/medium/language). The task's title + description
+// is the topic taught.
+func (s *HomeworkService) TeachTask(ctx context.Context, studentID, homeworkID, taskID uint) (*AskResult, error) {
+	hw, err := s.homeworks.GetForStudent(homeworkID, studentID)
+	if err != nil {
+		return nil, err
+	}
+	var topic string
+	for _, t := range hw.Tasks {
+		if t.ID == taskID {
+			topic = strings.TrimSpace(t.Title + ". " + t.Description)
+			break
+		}
+	}
+	if topic == "" {
+		return nil, fmt.Errorf("task not found in this homework")
+	}
+	st, err := s.students.FindByID(studentID)
+	if err != nil {
+		return nil, fmt.Errorf("student: %w", err)
+	}
+	sc := StudentContext{
+		Class:            st.StudentClass,
+		Medium:           st.Medium,
+		Board:            st.Board,
+		Group:            st.StudentGroup,
+		TeachingLanguage: st.TeachingLanguage,
+	}
+	return s.tutor.Teach(ctx, topic, sc)
 }
 
 // aiHomework is the JSON shape we ask Claude to return.
@@ -132,6 +168,18 @@ func (s *HomeworkService) List(studentID uint) ([]model.Homework, error) {
 // Get returns one homework scoped to the student.
 func (s *HomeworkService) Get(id, studentID uint) (*model.Homework, error) {
 	return s.homeworks.GetForStudent(id, studentID)
+}
+
+// SetTaskStatus marks a task done/skipped/pending (skippable stages) and returns
+// the refreshed homework with its recomputed status.
+func (s *HomeworkService) SetTaskStatus(studentID, taskID uint, status string) (*model.Homework, error) {
+	status = strings.TrimSpace(status)
+	switch status {
+	case "pending", "done", "skipped":
+	default:
+		return nil, fmt.Errorf("invalid status %q", status)
+	}
+	return s.homeworks.SetTaskStatus(taskID, studentID, status)
 }
 
 // Sync returns the homeworks (with tasks) changed since `since` for local-first

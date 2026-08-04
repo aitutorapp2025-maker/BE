@@ -98,6 +98,56 @@ func (h *HomeworkHandler) Sync(c *fiber.Ctx) error {
 	})
 }
 
+// Teach returns a short grounded lesson for one task of a homework (Phase 3).
+// POST /api/v1/student/homework/:id/tasks/:taskId/teach
+func (h *HomeworkHandler) Teach(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	hwID, _ := strconv.ParseUint(c.Params("id"), 10, 64)
+	taskID, _ := strconv.ParseUint(c.Params("taskId"), 10, 64)
+	if hwID == 0 || taskID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid ids")
+	}
+	res, err := h.hw.TeachTask(c.Context(), studentID, uint(hwID), uint(taskID))
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadGateway, "could not teach this task: "+err.Error())
+	}
+	return c.JSON(fiber.Map{
+		"success":  true,
+		"lesson":   res.Answer,
+		"grounded": res.Grounded,
+	})
+}
+
+type taskStatusRequest struct {
+	Status string `json:"status"` // pending | done | skipped
+}
+
+// SetTaskStatus marks a task done/skipped/pending — the "execute one by one +
+// skip" control. Returns the refreshed homework (with recomputed status).
+// PATCH /api/v1/student/homework/:id/tasks/:taskId  { "status": "done" }
+func (h *HomeworkHandler) SetTaskStatus(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	taskID, _ := strconv.ParseUint(c.Params("taskId"), 10, 64)
+	if taskID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid task id")
+	}
+	var req taskStatusRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	hw, err := h.hw.SetTaskStatus(studentID, uint(taskID), req.Status)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	return c.JSON(fiber.Map{"success": true, "homework": hw})
+}
+
 // Get returns one homework (with tasks) scoped to the student.
 // GET /api/v1/student/homework/:id
 func (h *HomeworkHandler) Get(c *fiber.Ctx) error {

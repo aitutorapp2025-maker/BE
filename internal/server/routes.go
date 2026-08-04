@@ -60,7 +60,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	)
 	// Homework: Claude vision reads an uploaded photo and splits it into tasks.
 	homeworkService := service.NewHomeworkService(
-		repository.NewHomeworkRepository(d.DB), studentRepo, chatClient,
+		repository.NewHomeworkRepository(d.DB), studentRepo, chatClient, tutorService,
 		d.Cfg.Uploads.Dir, d.Cfg.Uploads.PublicBaseURL)
 	homeworkHandler := handler.NewHomeworkHandler(homeworkService)
 	sessStore := session.New(d.Redis, d.Cfg.JWT.RefreshTTL)
@@ -183,6 +183,10 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Get("/homework", homeworkHandler.List)
 	// Delta sync for local-first history (Drift/SQLite on the device).
 	studentProtected.Post("/sync", homeworkHandler.Sync)
+	// Mark a task done/skipped (execute one by one; skippable stages).
+	studentProtected.Put("/homework/:id/tasks/:taskId", homeworkHandler.SetTaskStatus)
+	// Teach one task (RAG lesson in the student's language).
+	studentProtected.Post("/homework/:id/tasks/:taskId/teach", homeworkHandler.Teach)
 	studentProtected.Get("/homework/:id", homeworkHandler.Get)
 	// Start a UPI-AutoPay subscription (returns the Razorpay checkout link).
 	studentProtected.Post("/subscribe", paymentHandler.Subscribe)

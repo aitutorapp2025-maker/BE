@@ -40,6 +40,59 @@ func (r *HomeworkRepository) GetForStudent(id, studentID uint) (*model.Homework,
 	return &hw, nil
 }
 
+// SetTaskStatus updates one task's status (pending|done|skipped), scoped to the
+// student via the parent homework, then recomputes the homework's own status
+// (done when every task is done/skipped, in_progress once any task is acted on)
+// and touches its updated_at so the change flows through delta sync. Returns the
+// refreshed homework with its tasks.
+func (r *HomeworkRepository) SetTaskStatus(taskID, studentID uint, status string) (*model.Homework, error) {
+	var task model.HomeworkTask
+	err := r.db.
+		Joins("JOIN homeworks ON homeworks.id = homework_tasks.homework_id").
+		Where("homework_tasks.id = ? AND homeworks.student_id = ?", taskID, studentID).
+		First(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := r.db.Model(&model.HomeworkTask{}).
+		Where("id = ?", task.ID).
+		Update("status", status).Error; err != nil {
+		return nil, err
+	}
+
+	// Recompute the parent homework's status from all its tasks.
+	var tasks []model.HomeworkTask
+	if err := r.db.Where("homework_id = ?", task.HomeworkID).Find(&tasks).Error; err != nil {
+		return nil, err
+	}
+	hwStatus := "new"
+	if len(tasks) > 0 {
+		allSettled, anyActed := true, false
+		for _, t := range tasks {
+			if t.Status == "pending" {
+				allSettled = false
+			} else {
+				anyActed = true
+			}
+		}
+		switch {
+		case allSettled:
+			hwStatus = "done"
+		case anyActed:
+			hwStatus = "in_progress"
+		}
+	}
+	if err := r.db.Model(&model.Homework{}).
+		Where("id = ?", task.HomeworkID).
+		Updates(map[string]any{"status": hwStatus, "updated_at": time.Now()}).Error; err != nil {
+		return nil, err
+	}
+	return r.GetForStudent(task.HomeworkID, studentID)
+}
+
 // ChangedForStudent returns the student's homeworks (with tasks) whose updated_at
 // is newer than `since` — the delta the app pulls to keep its local DB in sync.
 // A zero `since` returns everything (first sync / after the user clears data).

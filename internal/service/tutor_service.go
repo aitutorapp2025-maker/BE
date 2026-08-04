@@ -140,6 +140,31 @@ func (s *TutorService) Ask(ctx context.Context, question string, sc StudentConte
 	return &AskResult{Answer: strings.TrimSpace(answer), Sources: sources, Grounded: true}, nil
 }
 
+// Teach produces a short lesson for a homework task topic, tailored to the
+// student's class + language and grounded in their textbook passages when any
+// match. Unlike Ask (strict grounding), teaching may elaborate pedagogically
+// (a simple explanation, a worked example, a quick check) so the student can
+// actually learn the task — but it still leans on the textbook when available.
+func (s *TutorService) Teach(ctx context.Context, topic string, sc StudentContext) (*AskResult, error) {
+	topic = strings.TrimSpace(topic)
+	if topic == "" {
+		return nil, fmt.Errorf("empty topic")
+	}
+	qv, err := s.embedder.EmbedQuery(ctx, topic)
+	if err != nil {
+		return nil, fmt.Errorf("embed topic: %w", err)
+	}
+	sources, err := s.chunks.Search(qv, sc.Class, sc.Medium, "", s.topK)
+	if err != nil {
+		return nil, fmt.Errorf("retrieve: %w", err)
+	}
+	lesson, err := s.chat.Complete(ctx, teachSystemPrompt(sc), buildTeachPrompt(topic, sources))
+	if err != nil {
+		return nil, fmt.Errorf("generate lesson: %w", err)
+	}
+	return &AskResult{Answer: strings.TrimSpace(lesson), Sources: sources, Grounded: len(sources) > 0}, nil
+}
+
 // Probe verifies the configured AI keys with a tiny round-trip: one embedding
 // (Voyage) and one short completion (Claude). Used by the admin "Test AI" button
 // so keys can be validated before books are ingested. Returns a clear error if
@@ -190,6 +215,40 @@ func buildUserPrompt(question string, sources []repository.RetrievedChunk) strin
 	}
 	b.WriteString("Student's question:\n")
 	b.WriteString(question)
+	return b.String()
+}
+
+func teachSystemPrompt(sc StudentContext) string {
+	lang := sc.TeachingLanguage
+	if lang == "" {
+		lang = "the student's medium of instruction"
+	}
+	group := ""
+	if sc.Group != "" {
+		group = fmt.Sprintf(" (%s group)", sc.Group)
+	}
+	return fmt.Sprintf(`You are Vaha, a friendly, patient tutor for an Indian school student in %s%s, `+
+		`%s board, studying in %s medium. You are TEACHING one homework task.
+
+Teach the task so the student truly understands it. Rules:
+- Reply in %s (simple language the student can follow).
+- Structure it: a one-line "what this is about", then a simple step-by-step explanation, then ONE short worked example, then a one-line "quick check" question at the end.
+- Lean on the textbook passages provided when they're relevant; you may add gentle, standard, age-appropriate explanation to make it clear, but do NOT introduce facts that contradict the textbook.
+- Warm and encouraging. Short paragraphs or bullets. Explain any technical term.
+- Never mention "passages", "context", "chunks" or that you were given excerpts — just teach.`,
+		sc.Class, group, boardOrDefault(sc.Board), mediumOrDefault(sc.Medium), lang)
+}
+
+func buildTeachPrompt(topic string, sources []repository.RetrievedChunk) string {
+	var b strings.Builder
+	if len(sources) > 0 {
+		b.WriteString("Textbook passages (use where relevant):\n\n")
+		for i, src := range sources {
+			fmt.Fprintf(&b, "[%d] (%s — %s)\n%s\n\n", i+1, src.Subject, src.BookTitle, src.Content)
+		}
+	}
+	b.WriteString("Homework task to teach:\n")
+	b.WriteString(topic)
 	return b.String()
 }
 
