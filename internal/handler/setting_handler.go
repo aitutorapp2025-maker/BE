@@ -92,6 +92,10 @@ type settingRequest struct {
 	AnthropicModel  string `json:"anthropic_model"`
 	VoyageAPIKey    string `json:"voyage_api_key"`
 	VoyageModel     string `json:"voyage_model"`
+	// Embeddings backend selection (voyage | local) + local endpoint.
+	EmbeddingsProvider string `json:"embeddings_provider"`
+	LocalEmbedURL      string `json:"local_embed_url"`
+	LocalEmbedModel    string `json:"local_embed_model"`
 
 	// Razorpay. Secrets are write-only; key_id is not a secret.
 	RazorpayEnabled       bool   `json:"razorpay_enabled"`
@@ -306,6 +310,12 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	if m := strings.TrimSpace(req.VoyageModel); m != "" {
 		s.VoyageModel = m
 	}
+	// Embeddings backend (voyage | local) + local endpoint.
+	if p := strings.TrimSpace(req.EmbeddingsProvider); p == "voyage" || p == "local" {
+		s.EmbeddingsProvider = p
+	}
+	s.LocalEmbedURL = strings.TrimSpace(req.LocalEmbedURL)
+	s.LocalEmbedModel = strings.TrimSpace(req.LocalEmbedModel)
 	if strings.TrimSpace(req.AnthropicAPIKey) != "" {
 		s.AnthropicAPIKey = strings.TrimSpace(req.AnthropicAPIKey)
 	}

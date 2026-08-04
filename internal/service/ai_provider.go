@@ -33,6 +33,16 @@ func AIProvider(settings *repository.SettingRepository, envFallback config.AICon
 		if m := strings.TrimSpace(s.VoyageModel); m != "" {
 			out.VoyageModel = m
 		}
+		// Embeddings backend (admin-toggleable): voyage | local.
+		if p := strings.TrimSpace(s.EmbeddingsProvider); p != "" {
+			out.EmbedProvider = p
+		}
+		if u := strings.TrimSpace(s.LocalEmbedURL); u != "" {
+			out.LocalEmbedURL = u
+		}
+		if m := strings.TrimSpace(s.LocalEmbedModel); m != "" {
+			out.LocalEmbedModel = m
+		}
 		// The admin "AI enabled" toggle only matters when keys exist; the
 		// pipeline is usable whenever both keys are present (DB or env).
 		if !s.AIEnabled && strings.TrimSpace(s.AnthropicAPIKey) == "" && strings.TrimSpace(s.VoyageAPIKey) == "" {

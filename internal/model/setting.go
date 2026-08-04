@@ -90,6 +90,11 @@ type Setting struct {
 	AnthropicModel  string `gorm:"size:60" json:"anthropic_model"` // e.g. claude-sonnet-5
 	VoyageAPIKey    string `gorm:"size:255" json:"-"`
 	VoyageModel     string `gorm:"size:60" json:"voyage_model"` // e.g. voyage-3
+	// Embeddings backend: "voyage" (cloud) or "local" (self-hosted BGE-M3 via an
+	// Ollama-style endpoint). LocalEmbedURL/Model configure the local server.
+	EmbeddingsProvider string `gorm:"size:20" json:"embeddings_provider"`
+	LocalEmbedURL      string `gorm:"size:200" json:"local_embed_url"`
+	LocalEmbedModel    string `gorm:"size:60" json:"local_embed_model"`
 
 	// Razorpay (UPI AutoPay subscriptions). key_id is used client-side so it's
 	// returned; the key secret and webhook secret are server-only (never
