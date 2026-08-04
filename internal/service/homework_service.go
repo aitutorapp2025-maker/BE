@@ -118,6 +118,7 @@ type aiHomework struct {
 	Tasks   []struct {
 		Title       string `json:"title"`
 		Description string `json:"description"`
+		DurationMin int    `json:"duration_min"`
 	} `json:"tasks"`
 }
 
@@ -147,11 +148,13 @@ func (s *HomeworkService) CreateFromImage(ctx context.Context, studentID uint, i
 		`  "subject": "the subject, e.g. Science",` + "\n" +
 		`  "title": "a short homework title",` + "\n" +
 		`  "summary": "one friendly line starting like: You have <subject> homework today — ...",` + "\n" +
-		`  "tasks": [ {"title": "...", "description": "..."} ]` + "\n" +
+		`  "tasks": [ {"title": "...", "description": "...", "duration_min": 10} ]` + "\n" +
 		"}\n" +
 		"Split the homework into EXACTLY 5 short tasks the student should do one by one " +
 		"(read/understand, learn the concept, practise, revise, self-test). Keep each " +
-		"title under 8 words and each description one short sentence. Return ONLY the JSON."
+		"title under 8 words and each description one short sentence. For each task set " +
+		"duration_min: a realistic number of MINUTES (5–20) the student should spend on " +
+		"it. Return ONLY the JSON."
 
 	raw, err := s.chat.CompleteVision(ctx, system, prompt, base64.StdEncoding.EncodeToString(imageBytes), mediaType)
 	if err != nil {
@@ -175,10 +178,15 @@ func (s *HomeworkService) CreateFromImage(ctx context.Context, studentID uint, i
 		if i >= 5 {
 			break
 		}
+		dur := t.DurationMin
+		if dur < 1 || dur > 120 {
+			dur = 10 // sane default when the AI omits/overshoots
+		}
 		hw.Tasks = append(hw.Tasks, model.HomeworkTask{
 			OrderNo:     i + 1,
 			Title:       strings.TrimSpace(t.Title),
 			Description: strings.TrimSpace(t.Description),
+			DurationMin: dur,
 			Status:      "pending",
 		})
 	}

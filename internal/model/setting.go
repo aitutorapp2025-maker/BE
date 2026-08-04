@@ -108,6 +108,11 @@ type Setting struct {
 	// page. Off by default.
 	CastEnabled bool `gorm:"not null;default:false" json:"cast_enabled"`
 
+	// TimedTasksEnabled turns on per-task countdown timers: each homework task
+	// runs a timer for its suggested duration and alerts the student when it ends
+	// ("time up — start the next task"). Off by default.
+	TimedTasksEnabled bool `gorm:"not null;default:false" json:"timed_tasks_enabled"`
+
 	// Computed (not stored): whether each secret is on file.
 	NexmoSecretSet       bool `gorm:"-" json:"nexmo_secret_set"`
 	SmsExpertPasswordSet bool `gorm:"-" json:"smsexpert_password_set"`

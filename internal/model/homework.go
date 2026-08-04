@@ -30,7 +30,10 @@ type HomeworkTask struct {
 	OrderNo     int       `gorm:"not null;default:0" json:"order_no"`
 	Title       string    `gorm:"size:200" json:"title"`
 	Description string    `gorm:"type:text" json:"description"`
-	Status      string    `gorm:"size:20;not null;default:pending" json:"status"` // pending | done
+	// DurationMin is how long the AI suggests spending on this task; the app runs
+	// a countdown and alerts the student when the time is up (timed-task mode).
+	DurationMin int    `gorm:"not null;default:10" json:"duration_min"`
+	Status      string `gorm:"size:20;not null;default:pending" json:"status"` // pending | done
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
