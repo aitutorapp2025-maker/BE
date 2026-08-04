@@ -101,6 +101,8 @@ type settingRequest struct {
 
 	// Whether trials require a UPI-AutoPay mandate (admin-toggleable).
 	AutopayEnabled bool `json:"autopay_enabled"`
+	// Whether the "Cast to TV" option shows on the app home page.
+	CastEnabled bool `json:"cast_enabled"`
 }
 
 // Maintenance returns the public maintenance status for the customer apps.
@@ -319,6 +321,7 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 		s.RazorpayWebhookSecret = strings.TrimSpace(req.RazorpayWebhookSecret)
 	}
 	s.AutopayEnabled = req.AutopayEnabled
+	s.CastEnabled = req.CastEnabled
 
 	if err := h.settings.Save(s); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to save settings")

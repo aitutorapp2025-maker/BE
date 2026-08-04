@@ -104,6 +104,10 @@ type Setting struct {
 	// usable without a mandate). Defaults to on to preserve existing behaviour.
 	AutopayEnabled bool `gorm:"not null;default:true" json:"autopay_enabled"`
 
+	// CastEnabled shows the "Cast to TV" (screen mirror) option on the app home
+	// page. Off by default.
+	CastEnabled bool `gorm:"not null;default:false" json:"cast_enabled"`
+
 	// Computed (not stored): whether each secret is on file.
 	NexmoSecretSet       bool `gorm:"-" json:"nexmo_secret_set"`
 	SmsExpertPasswordSet bool `gorm:"-" json:"smsexpert_password_set"`
