@@ -105,6 +105,41 @@ func TrialRemindersJob(
 	}
 }
 
+// ReferralPromoJob broadcasts an FCM push to ALL customers every 3 days,
+// nudging them to share Vaha AI with friends via refer & earn. It reuses the
+// admin broadcast pipeline (queued on RabbitMQ; the push worker resolves every
+// customer's device tokens, delivers and prunes stale ones). It only sends when
+// the referral program is switched on, so a disabled program is never promoted.
+func ReferralPromoJob(settings *repository.SettingRepository, push *fcm.Publisher) Job {
+	return Job{
+		Key:      "referral_promo",
+		Schedule: "every3days",
+		Run: func(now time.Time) (string, error) {
+			s, err := settings.Get()
+			if err != nil {
+				return "", err
+			}
+			if !s.ReferralEnabled {
+				return "referral program off — skipped", nil
+			}
+			if !push.Enabled() {
+				return "FCM not configured (0 sent)", nil
+			}
+			title := "Invite friends, earn rewards 🎁"
+			body := "Share Vaha AI with your friends and earn rewards when they join. Tap to open the app and get your link!"
+			if s.ReferralRewardRupees > 0 {
+				body = fmt.Sprintf(
+					"Get ₹%d off your next bill for every friend who joins Vaha AI with your code. Open the app to share your link!",
+					s.ReferralRewardRupees)
+			}
+			if err := push.Enqueue(fcm.PushJob{Title: title, Body: body}); err != nil {
+				return "", err
+			}
+			return "queued referral promo to all customers", nil
+		},
+	}
+}
+
 // daysUntil is the calendar-day difference (t's date − now's date), so a trial
 // ending later today is 0, tomorrow is 1, etc.
 func daysUntil(t, now time.Time) int {

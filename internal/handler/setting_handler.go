@@ -109,6 +109,12 @@ type settingRequest struct {
 	CastEnabled bool `json:"cast_enabled"`
 	// Whether per-task countdown timers + alerts are on.
 	TimedTasksEnabled bool `json:"timed_tasks_enabled"`
+
+	// Referral ("refer & earn") program.
+	ReferralEnabled      bool   `json:"referral_enabled"`
+	ReferralRewardRupees int    `json:"referral_reward_rupees"`
+	ReferralShareMessage string `json:"referral_share_message"`
+	ReferralLinkBase     string `json:"referral_link_base"`
 }
 
 // Maintenance returns the public maintenance status for the customer apps.
@@ -335,6 +341,14 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.AutopayEnabled = req.AutopayEnabled
 	s.CastEnabled = req.CastEnabled
 	s.TimedTasksEnabled = req.TimedTasksEnabled
+
+	// Referral program.
+	s.ReferralEnabled = req.ReferralEnabled
+	if req.ReferralRewardRupees >= 0 {
+		s.ReferralRewardRupees = req.ReferralRewardRupees
+	}
+	s.ReferralShareMessage = strings.TrimSpace(req.ReferralShareMessage)
+	s.ReferralLinkBase = strings.TrimSpace(req.ReferralLinkBase)
 
 	if err := h.settings.Save(s); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to save settings")

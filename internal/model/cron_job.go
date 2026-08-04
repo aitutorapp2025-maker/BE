@@ -10,7 +10,8 @@ type CronJob struct {
 	Key         string `gorm:"size:60;uniqueIndex;not null" json:"key"` // stable id, e.g. "trial_reminders"
 	Name        string `gorm:"size:120;not null" json:"name"`
 	Description string `gorm:"size:300" json:"description"`
-	// Schedule: "hourly" (runs every tick) or "daily" (once per calendar day).
+	// Schedule: "hourly" (runs every tick), "daily" (once per calendar day) or
+	// "everyNdays" (e.g. "every3days" — at most once every N days).
 	Schedule string `gorm:"size:20;not null;default:daily" json:"schedule"`
 	Enabled  bool   `gorm:"not null;default:false" json:"enabled"`
 

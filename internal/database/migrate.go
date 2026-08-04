@@ -45,6 +45,7 @@ func Migrate(db *gorm.DB) error {
 		&model.HomeworkTask{},
 		&model.HomeworkTest{},
 		&model.AuditLog{},
+		&model.Referral{},
 	)
 }
 
@@ -93,6 +94,8 @@ func CreateIndexes(db *gorm.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_hw_tests_hw_student ON homework_tests (homework_id, student_id)`,
 		// Recent credit ledger entries per student.
 		`CREATE INDEX IF NOT EXISTS idx_credit_student_created ON credit_ledger (student_id, created_at DESC)`,
+		// Referrals a student has made, newest first (admin list + student count).
+		`CREATE INDEX IF NOT EXISTS idx_referrals_referrer_created ON referrals (referrer_id, created_at DESC)`,
 	}
 	var firstErr error
 	for _, s := range stmts {

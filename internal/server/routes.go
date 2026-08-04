@@ -103,7 +103,12 @@ func registerRoutes(app *fiber.App, d Deps) {
 	handshakeHandler := handler.NewHandshakeHandler(sessStore)
 	// Whether trials require a UPI-AutoPay mandate — admin-toggleable, read per call.
 	autopayEnabled := service.AutopayProvider(settingRepo)
-	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo, autopayEnabled)
+	// Referral ("refer & earn"): mints share codes, attributes new signups, and
+	// accrues the referrer's next-bill discount.
+	referralRepo := repository.NewReferralRepository(d.DB)
+	referralService := service.NewReferralService(studentRepo, referralRepo, settingRepo)
+	referralHandler := handler.NewReferralHandler(referralService, referralRepo)
+	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo, autopayEnabled, referralService)
 	tutorHandler := handler.NewTutorHandler(tutorService, studentRepo, creditService, autopayEnabled)
 	creditHandler := handler.NewCreditHandler(creditService, studentRepo)
 	reportHandler := handler.NewReportHandler(studentRepo, creditRepo)
@@ -124,6 +129,11 @@ func registerRoutes(app *fiber.App, d Deps) {
 
 	// ── Public routes ────────────────────────────────────────────────────
 	app.Get("/health", healthHandler.Check)
+
+	// Referral short link — PUBLIC + plaintext (shared over WhatsApp; opened in a
+	// browser, not the app), so it bypasses the E2E middleware. Detects the
+	// device and redirects to the Play/App Store.
+	app.Get("/r/:code", handler.NewReferralRedirectHandler(settingRepo).Redirect)
 
 	v1 := app.Group("/api/v1")
 	v1.Get("/ping", func(c *fiber.Ctx) error {
@@ -196,6 +206,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 		audit)
 	studentProtected.Get("/me", studentAuthHandler.Me)
 	studentProtected.Put("/profile", studentAuthHandler.UpdateProfile)
+	// Refer & earn: the student's own code, share link and reward status.
+	studentProtected.Get("/referral", referralHandler.Me)
 	// Soft-delete the account (kept for audit, hidden everywhere; re-register
 	// starts fresh).
 	studentProtected.Delete("/account", studentAuthHandler.DeleteAccount)
@@ -354,6 +366,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	langs.Post("", teachingLangHandler.Create)
 	langs.Put("/:id", teachingLangHandler.Update)
 	langs.Delete("/:id", teachingLangHandler.Delete)
+
+	// Referrals — admin view of who referred whom (refer & earn).
+	adminProtected.Get("/referrals", referralHandler.List)
 
 	// Contact submissions (enquiries).
 	contacts := adminProtected.Group("/contacts")

@@ -235,6 +235,10 @@ func main() {
 		service.NewCreditService(repository.NewCreditRepository(db)),
 		repository.NewPaymentEventRepository(db))
 
+	// Publisher for scheduler-driven broadcasts (reuses the admin push pipeline:
+	// queued on RabbitMQ, delivered + pruned by the push worker).
+	pushPublisher := fcm.NewPublisher(mq, func() bool { return pushSender.Enabled() })
+
 	sched := scheduler.New(cronRepo, log)
 	registrations := []struct {
 		job  scheduler.Job
@@ -253,6 +257,9 @@ func main() {
 		{scheduler.CleanupAuditLogsJob(repository.NewAuditLogRepository(db)),
 			"Cleanup audit logs",
 			"Deletes audit-log entries older than 90 days (retention)."},
+		{scheduler.ReferralPromoJob(settingRepo, pushPublisher),
+			"Referral promo push",
+			"Every 3 days, sends all customers an FCM push promoting refer & earn (only when the referral program is on)."},
 	}
 	for _, r := range registrations {
 		if err := cronRepo.Ensure(model.CronJob{

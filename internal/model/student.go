@@ -51,7 +51,18 @@ type Student struct {
 	// student never enables it (or deletes it), the trial can't be used and
 	// expires with no auto-debit.
 	AutopayActive bool      `gorm:"not null;default:false" json:"autopay_active"`
-	JoinedAt      time.Time `json:"joined_at"`
+
+	// Referral program. ReferralCode is this student's own share code (unique,
+	// generated lazily the first time they open Refer & Earn). ReferredByID is the
+	// referrer's student id, set once when this student signs up under a code.
+	// ReferralRewardRupees is an accrued discount applied to — and cleared at — the
+	// next auto-debit. ReferralCount is how many students have joined via this code.
+	ReferralCode         string `gorm:"size:16;uniqueIndex" json:"referral_code"`
+	ReferredByID         uint   `gorm:"index" json:"referred_by_id"`
+	ReferralRewardRupees int    `gorm:"not null;default:0" json:"referral_reward_rupees"`
+	ReferralCount        int    `gorm:"not null;default:0" json:"referral_count"`
+
+	JoinedAt time.Time `json:"joined_at"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 	// DeletedAt enables soft delete: a deleted account keeps its row (audit /

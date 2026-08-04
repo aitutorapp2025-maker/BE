@@ -208,8 +208,22 @@ func (s *PaymentService) ChargeDueMandates(now time.Time) (int, error) {
 			"plan_id":    strconv.FormatUint(uint64(plan.ID), 10),
 			"purpose":    "recurring",
 		}
+		// Apply any accrued referral reward as a discount on this bill. Razorpay
+		// needs a positive amount, so we never discount below ₹1; whatever we use
+		// is cleared once the charge is initiated so it isn't applied twice.
+		amountRupees := plan.PriceRupees
+		discount := st.ReferralRewardRupees
+		if discount > 0 {
+			if discount > amountRupees-1 {
+				discount = amountRupees - 1
+			}
+			if discount < 0 {
+				discount = 0
+			}
+			amountRupees -= discount
+		}
 		receipt := "cycle_" + strconv.FormatUint(uint64(st.ID), 10) + "_" + strconv.FormatInt(now.Unix(), 10)
-		if _, err := s.client.ChargeRecurring(plan.PriceRupees*100, st.RazorpayCustomerID, st.RazorpayTokenID, receipt, notes); err != nil {
+		if _, err := s.client.ChargeRecurring(amountRupees*100, st.RazorpayCustomerID, st.RazorpayTokenID, receipt, notes); err != nil {
 			continue // leave NextChargeAt so it retries next tick
 		}
 		// Advance the next charge by the plan's cycle length so we don't re-debit
@@ -220,6 +234,10 @@ func (s *PaymentService) ChargeDueMandates(now time.Time) (int, error) {
 		}
 		next := now.AddDate(0, 0, days)
 		st.NextChargeAt = &next
+		// Consume the referral discount we just applied (only what we used).
+		if discount > 0 {
+			st.ReferralRewardRupees -= discount
+		}
 		_ = s.students.Update(st)
 		charged++
 	}

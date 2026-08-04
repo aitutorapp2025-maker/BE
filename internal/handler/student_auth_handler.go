@@ -12,20 +12,35 @@ import (
 // StudentAuthHandler handles passwordless student login (OTP over SMS) for the
 // mobile app.
 type StudentAuthHandler struct {
-	auth    *service.StudentAuthService
-	groups  *repository.ClassGroupRepository
-	autopay service.AutopayEnabledFunc
+	auth     *service.StudentAuthService
+	groups   *repository.ClassGroupRepository
+	autopay  service.AutopayEnabledFunc
+	referral *service.ReferralService
 }
 
 // NewStudentAuthHandler builds a StudentAuthHandler. The class-group repo is
 // used to validate the subject group the student picks during onboarding. The
-// autopay func gates the "enable autopay" prompt behind the admin toggle.
+// autopay func gates the "enable autopay" prompt behind the admin toggle. The
+// referral service attributes a new signup to a referrer when a code is passed.
 func NewStudentAuthHandler(
 	auth *service.StudentAuthService,
 	groups *repository.ClassGroupRepository,
 	autopay service.AutopayEnabledFunc,
+	referral *service.ReferralService,
 ) *StudentAuthHandler {
-	return &StudentAuthHandler{auth: auth, groups: groups, autopay: autopay}
+	return &StudentAuthHandler{auth: auth, groups: groups, autopay: autopay, referral: referral}
+}
+
+// attributeReferral best-effort links a brand-new student to a referrer. Never
+// blocks or fails login — a bad/blank code is simply ignored.
+func (h *StudentAuthHandler) attributeReferral(result *service.StudentAuthResult, code string) {
+	if h.referral == nil || result == nil || !result.IsNew {
+		return
+	}
+	if strings.TrimSpace(code) == "" {
+		return
+	}
+	_ = h.referral.Attribute(result.Student.ID, code)
 }
 
 type sendOtpRequest struct {
@@ -63,10 +78,11 @@ func (h *StudentAuthHandler) SendOTP(c *fiber.Ctx) error {
 }
 
 type verifyOtpRequest struct {
-	Phone       string `json:"phone"`
-	Code        string `json:"code"`
-	DeviceToken string `json:"device_token"` // optional FCM token from the device
-	ClientPub   string `json:"client_pub"`   // base64 X25519 pubkey for E2E key exchange
+	Phone        string `json:"phone"`
+	Code         string `json:"code"`
+	DeviceToken  string `json:"device_token"`  // optional FCM token from the device
+	ClientPub    string `json:"client_pub"`    // base64 X25519 pubkey for E2E key exchange
+	ReferralCode string `json:"referral_code"` // optional — attribute a new signup
 }
 
 // VerifyOTP checks the code and, on success, signs the student in — issuing the
@@ -94,6 +110,9 @@ func (h *StudentAuthHandler) VerifyOTP(c *fiber.Ctx) error {
 		}
 	}
 
+	// New signups may carry a referral code — attribute it (best-effort).
+	h.attributeReferral(result, req.ReferralCode)
+
 	return c.JSON(fiber.Map{
 		"success":        true,
 		"token":          result.Token,
@@ -107,10 +126,11 @@ func (h *StudentAuthHandler) VerifyOTP(c *fiber.Ctx) error {
 }
 
 type googleLoginRequest struct {
-	IDToken     string `json:"id_token"`
-	AccessToken string `json:"access_token"` // web flow yields an access token
-	ClientPub   string `json:"client_pub"`
-	DeviceToken string `json:"device_token"`
+	IDToken      string `json:"id_token"`
+	AccessToken  string `json:"access_token"` // web flow yields an access token
+	ClientPub    string `json:"client_pub"`
+	DeviceToken  string `json:"device_token"`
+	ReferralCode string `json:"referral_code"` // optional — attribute a new signup
 }
 
 // GoogleLogin signs a student in with a Google (Gmail) ID token. Same session
@@ -124,6 +144,8 @@ func (h *StudentAuthHandler) GoogleLogin(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
 	}
+	// New signups may carry a referral code — attribute it (best-effort).
+	h.attributeReferral(result, req.ReferralCode)
 	return c.JSON(fiber.Map{
 		"success":        true,
 		"token":          result.Token,

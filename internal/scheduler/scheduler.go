@@ -5,6 +5,7 @@
 package scheduler
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
@@ -15,7 +16,7 @@ import (
 // (e.g. "reminded 12") stored as the last result.
 type Job struct {
 	Key      string
-	Schedule string // "hourly" (every tick) or "daily" (once per calendar day)
+	Schedule string // "hourly" (every tick), "daily" (once/day), "everyNdays" (once/N days)
 	Run      func(now time.Time) (string, error)
 }
 
@@ -96,6 +97,11 @@ func (s *Scheduler) runDue(now time.Time) {
 		if j.Schedule == "daily" && cj.LastRunAt != nil && sameDay(*cj.LastRunAt, now) {
 			continue
 		}
+		// "everyNdays" jobs run at most once per N days (N*24h since the last run).
+		if days, ok := everyNDays(j.Schedule); ok && cj.LastRunAt != nil &&
+			now.Sub(*cj.LastRunAt) < time.Duration(days)*24*time.Hour {
+			continue
+		}
 		result, rerr := j.Run(now)
 		status := "ok"
 		if rerr != nil {
@@ -109,6 +115,16 @@ func (s *Scheduler) runDue(now time.Time) {
 			s.log.Errorf("cron %s: record run: %v", j.Key, err)
 		}
 	}
+}
+
+// everyNDays parses an "everyNdays" schedule (e.g. "every3days") into N. Returns
+// (0, false) for any other schedule string.
+func everyNDays(schedule string) (int, bool) {
+	var n int
+	if _, err := fmt.Sscanf(schedule, "every%ddays", &n); err == nil && n > 0 {
+		return n, true
+	}
+	return 0, false
 }
 
 func sameDay(a, b time.Time) bool {

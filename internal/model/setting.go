@@ -118,6 +118,19 @@ type Setting struct {
 	// ("time up — start the next task"). Off by default.
 	TimedTasksEnabled bool `gorm:"not null;default:false" json:"timed_tasks_enabled"`
 
+	// Referral ("refer & earn") program. When enabled, every student gets a
+	// personal share link; a new student who signs up under a referral code earns
+	// the referrer ReferralRewardRupees off their NEXT auto-debit bill.
+	//   - ReferralShareMessage is the WhatsApp message template. {link} is replaced
+	//     with the student's share link and {code} with their code.
+	//   - ReferralLinkBase is the public short-link base (e.g. https://vahaai.com/r/);
+	//     the full link is ReferralLinkBase + code. It should point at the backend
+	//     /r/:code redirect (which sends the visitor to the Play/App Store).
+	ReferralEnabled      bool   `gorm:"not null;default:false" json:"referral_enabled"`
+	ReferralRewardRupees int    `gorm:"not null;default:0" json:"referral_reward_rupees"`
+	ReferralShareMessage string `gorm:"size:600" json:"referral_share_message"`
+	ReferralLinkBase     string `gorm:"size:200" json:"referral_link_base"`
+
 	// Computed (not stored): whether each secret is on file.
 	NexmoSecretSet       bool `gorm:"-" json:"nexmo_secret_set"`
 	SmsExpertPasswordSet bool `gorm:"-" json:"smsexpert_password_set"`
