@@ -183,6 +183,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Get("/homework", homeworkHandler.List)
 	// Delta sync for local-first history (Drift/SQLite on the device).
 	studentProtected.Post("/sync", homeworkHandler.Sync)
+	// Performance report (marks + progress, date-wise; skip-aware).
+	studentProtected.Get("/report", homeworkHandler.Report)
 	// Mark a task done/skipped (execute one by one; skippable stages).
 	studentProtected.Put("/homework/:id/tasks/:taskId", homeworkHandler.SetTaskStatus)
 	// Teach one task (RAG lesson in the student's language).

@@ -213,6 +213,79 @@ func (s *HomeworkService) SetTaskStatus(studentID, taskID uint, status string) (
 	return s.homeworks.SetTaskStatus(taskID, studentID, status)
 }
 
+// HomeworkReport is one homework's line in the performance report.
+type HomeworkReport struct {
+	HomeworkID   uint      `json:"homework_id"`
+	Title        string    `json:"title"`
+	Subject      string    `json:"subject"`
+	CreatedAt    time.Time `json:"created_at"`
+	TasksTotal   int       `json:"tasks_total"`
+	TasksDone    int       `json:"tasks_done"`
+	TasksSkipped int       `json:"tasks_skipped"`
+	TestsTaken   int       `json:"tests_taken"`
+	Tested       bool      `json:"tested"`
+	MarkPct      int       `json:"mark_pct"` // avg % of tests taken (0 if none)
+}
+
+// PerformanceReport aggregates a student's homework marks + progress, date-wise.
+type PerformanceReport struct {
+	Homeworks      []HomeworkReport `json:"homeworks"`
+	TotalHomeworks int              `json:"total_homeworks"`
+	TestedCount    int              `json:"tested_count"`
+	OverallPct     int              `json:"overall_pct"` // avg mark over tested homeworks
+}
+
+// Report builds the student's performance report. Marks come only from tests the
+// student actually took (skipped stages are excluded, never zeroed), matching the
+// "average of completed stages only" policy. Homeworks are newest first.
+func (s *HomeworkService) Report(studentID uint) (*PerformanceReport, error) {
+	hws, err := s.homeworks.ListForStudent(studentID)
+	if err != nil {
+		return nil, err
+	}
+	out := &PerformanceReport{TotalHomeworks: len(hws)}
+	markSum := 0
+	for _, hw := range hws {
+		line := HomeworkReport{
+			HomeworkID: hw.ID,
+			Title:      hw.Title,
+			Subject:    hw.Subject,
+			CreatedAt:  hw.CreatedAt,
+			TasksTotal: len(hw.Tasks),
+		}
+		for _, t := range hw.Tasks {
+			switch t.Status {
+			case "done":
+				line.TasksDone++
+			case "skipped":
+				line.TasksSkipped++
+			}
+		}
+		tests, err := s.homeworks.TestsForHomework(hw.ID, studentID)
+		if err != nil {
+			return nil, err
+		}
+		if len(tests) > 0 {
+			pctSum := 0
+			for _, t := range tests {
+				if t.MaxScore > 0 {
+					pctSum += t.Score * 100 / t.MaxScore
+				}
+			}
+			line.TestsTaken = len(tests)
+			line.Tested = true
+			line.MarkPct = pctSum / len(tests)
+			out.TestedCount++
+			markSum += line.MarkPct
+		}
+		out.Homeworks = append(out.Homeworks, line)
+	}
+	if out.TestedCount > 0 {
+		out.OverallPct = markSum / out.TestedCount
+	}
+	return out, nil
+}
+
 // Sync returns the homeworks (with tasks) changed since `since` for local-first
 // delta sync. A zero `since` returns the full history.
 func (s *HomeworkService) Sync(studentID uint, since time.Time) ([]model.Homework, error) {

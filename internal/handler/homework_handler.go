@@ -72,6 +72,20 @@ type syncRequest struct {
 	Since int64 `json:"since"` // unix ms of the client's last sync (0 = full)
 }
 
+// Report returns the student's performance report (marks + progress, date-wise).
+// GET /api/v1/student/report
+func (h *HomeworkHandler) Report(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	report, err := h.hw.Report(studentID)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "could not build the report")
+	}
+	return c.JSON(fiber.Map{"success": true, "report": report})
+}
+
 // Sync returns the homeworks (with tasks) changed since the client's last sync,
 // so the app keeps a local-first copy of the student's history and only pulls
 // the delta. The response includes server_time (ms) which the client stores as
