@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/config"
@@ -40,8 +41,23 @@ type anthropicRequest struct {
 }
 
 type anthropicMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role string `json:"role"`
+	// Content is a plain string for text-only turns, or a slice of content blocks
+	// (see contentBlock) when an image is attached (vision).
+	Content any `json:"content"`
+}
+
+// contentBlock is one part of a multimodal user turn (text or image).
+type contentBlock struct {
+	Type   string       `json:"type"`             // "text" | "image"
+	Text   string       `json:"text,omitempty"`   // for type=text
+	Source *imageSource `json:"source,omitempty"` // for type=image
+}
+
+type imageSource struct {
+	Type      string `json:"type"`       // "base64"
+	MediaType string `json:"media_type"` // e.g. image/jpeg, image/png
+	Data      string `json:"data"`       // base64-encoded image bytes
 }
 
 type anthropicResponse struct {
@@ -58,15 +74,44 @@ type anthropicResponse struct {
 
 // Complete sends a system prompt + user message and returns the model's text.
 func (c *Chat) Complete(ctx context.Context, system, user string) (string, error) {
+	return c.send(ctx, system, []anthropicMessage{{Role: "user", Content: user}}, 1500)
+}
+
+// CompleteVision sends a system prompt plus a user turn containing an image and
+// a text instruction, and returns the model's text. [imageB64] is the raw base64
+// of the image bytes; [mediaType] is e.g. "image/jpeg" or "image/png". Used to
+// read a homework photo and (with a JSON-returning prompt) split it into tasks.
+func (c *Chat) CompleteVision(ctx context.Context, system, user, imageB64, mediaType string) (string, error) {
+	if mediaType == "" {
+		mediaType = "image/jpeg"
+	}
+	// PDFs go in a "document" block; images in an "image" block.
+	blockType := "image"
+	if strings.Contains(mediaType, "pdf") {
+		blockType = "document"
+	}
+	msg := anthropicMessage{
+		Role: "user",
+		Content: []contentBlock{
+			{Type: blockType, Source: &imageSource{Type: "base64", MediaType: mediaType, Data: imageB64}},
+			{Type: "text", Text: user},
+		},
+	}
+	// Vision + task-splitting needs more room than a single tutor answer.
+	return c.send(ctx, system, []anthropicMessage{msg}, 3000)
+}
+
+// send performs one Messages API call and concatenates the returned text blocks.
+func (c *Chat) send(ctx context.Context, system string, messages []anthropicMessage, maxTokens int) (string, error) {
 	cfg := c.cfg()
 	if cfg.AnthropicKey == "" {
 		return "", fmt.Errorf("claude: no API key configured (set it in admin Settings)")
 	}
 	reqBody := anthropicRequest{
 		Model:     cfg.AnthropicModel,
-		MaxTokens: 1500,
+		MaxTokens: maxTokens,
 		System:    system,
-		Messages:  []anthropicMessage{{Role: "user", Content: user}},
+		Messages:  messages,
 	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {

@@ -41,6 +41,8 @@ func Migrate(db *gorm.DB) error {
 		&model.CreditLedger{},
 		&model.PaymentEvent{},
 		&model.CronJob{},
+		&model.Homework{},
+		&model.HomeworkTask{},
 	)
 }
 

@@ -51,12 +51,18 @@ func registerRoutes(app *fiber.App, d Deps) {
 	ingestPublisher := ai.NewIngestPublisher(d.MQ, func() bool { return aiProvider().Enabled() })
 	// Tutoring (RAG) pipeline: Voyage embeddings + Claude answers. Keys are read
 	// per call from aiProvider (DB settings → env fallback).
+	chatClient := ai.NewChat(aiProvider)
 	tutorService := service.NewTutorService(
 		bookRepo, bookChunkRepo,
 		ai.NewEmbedder(aiProvider),
-		ai.NewChat(aiProvider),
+		chatClient,
 		d.Cfg.AI.TopK,
 	)
+	// Homework: Claude vision reads an uploaded photo and splits it into tasks.
+	homeworkService := service.NewHomeworkService(
+		repository.NewHomeworkRepository(d.DB), studentRepo, chatClient,
+		d.Cfg.Uploads.Dir, d.Cfg.Uploads.PublicBaseURL)
+	homeworkHandler := handler.NewHomeworkHandler(homeworkService)
 	sessStore := session.New(d.Redis, d.Cfg.JWT.RefreshTTL)
 	authService := service.NewAuthService(adminRepo, sessStore, d.Cfg)
 	creditService := service.NewCreditService(creditRepo)
@@ -172,6 +178,10 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Post("/device-token", studentAuthHandler.SaveDeviceToken)
 	// Ask the AI tutor a textbook question (retrieval + Claude answer).
 	studentProtected.Post("/ask", tutorHandler.Ask)
+	// Homework: upload a photo → AI reads it and splits it into tasks.
+	studentProtected.Post("/homework", homeworkHandler.Upload)
+	studentProtected.Get("/homework", homeworkHandler.List)
+	studentProtected.Get("/homework/:id", homeworkHandler.Get)
 	// Start a UPI-AutoPay subscription (returns the Razorpay checkout link).
 	studentProtected.Post("/subscribe", paymentHandler.Subscribe)
 	// Headless UPI-AutoPay: returns a GPay intent deeplink (no Razorpay UI).

@@ -231,12 +231,22 @@ func (s *StudentAuthService) VerifyOTP(ctx context.Context, phone, code, deviceT
 
 // LoginWithGoogle verifies a Google ID token, finds-or-creates the student by
 // Google id (then email), and opens a signed session — same result as OTP login.
-func (s *StudentAuthService) LoginWithGoogle(ctx context.Context, idToken, clientPub, deviceToken string) (*StudentAuthResult, error) {
+func (s *StudentAuthService) LoginWithGoogle(ctx context.Context, idToken, accessToken, clientPub, deviceToken string) (*StudentAuthResult, error) {
 	gc := s.googleCfg()
 	if !gc.Enabled {
 		return nil, errors.New("google sign-in is disabled")
 	}
-	claims, err := verifyGoogleIDToken(ctx, idToken, gc.ClientID)
+	// Mobile yields an id_token; the web google_sign_in flow yields only an
+	// access token — verify whichever the client sent (both via tokeninfo).
+	var (
+		claims *googleClaims
+		err    error
+	)
+	if strings.TrimSpace(idToken) != "" {
+		claims, err = verifyGoogleIDToken(ctx, idToken, gc.ClientID)
+	} else {
+		claims, err = verifyGoogleAccessToken(ctx, accessToken, gc.ClientID)
+	}
 	if err != nil {
 		return nil, err
 	}

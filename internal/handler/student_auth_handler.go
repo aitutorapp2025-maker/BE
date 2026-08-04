@@ -108,6 +108,7 @@ func (h *StudentAuthHandler) VerifyOTP(c *fiber.Ctx) error {
 
 type googleLoginRequest struct {
 	IDToken     string `json:"id_token"`
+	AccessToken string `json:"access_token"` // web flow yields an access token
 	ClientPub   string `json:"client_pub"`
 	DeviceToken string `json:"device_token"`
 }
@@ -119,7 +120,7 @@ func (h *StudentAuthHandler) GoogleLogin(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 	}
-	result, err := h.auth.LoginWithGoogle(c.Context(), req.IDToken, req.ClientPub, req.DeviceToken)
+	result, err := h.auth.LoginWithGoogle(c.Context(), req.IDToken, req.AccessToken, req.ClientPub, req.DeviceToken)
 	if err != nil {
 		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
 	}
