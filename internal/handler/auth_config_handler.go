@@ -29,7 +29,7 @@ func (h *AuthConfigHandler) Get(c *fiber.Ctx) error {
 	}
 	// Brand name + logo + store links from admin Settings.
 	appName := "Vaha AI"
-	logoURL, androidURL, iosURL := "", "", ""
+	logoURL, androidURL, iosURL, supportWhatsApp := "", "", "", ""
 	castOn, timedOn, referralOn := false, false, false
 	if s, err := h.settings.Get(); err == nil {
 		if s.AppName != "" {
@@ -38,6 +38,7 @@ func (h *AuthConfigHandler) Get(c *fiber.Ctx) error {
 		logoURL = s.LogoURL
 		androidURL = s.AndroidStoreURL
 		iosURL = s.IosStoreURL
+		supportWhatsApp = s.SupportWhatsApp
 		castOn = s.CastEnabled
 		timedOn = s.TimedTasksEnabled
 		referralOn = s.ReferralEnabled
@@ -48,6 +49,7 @@ func (h *AuthConfigHandler) Get(c *fiber.Ctx) error {
 		"logo_url":            logoURL,
 		"android_store_url":   androidURL,
 		"ios_store_url":       iosURL,
+		"support_whatsapp":    supportWhatsApp,
 		"cast_enabled":        castOn,
 		"timed_tasks_enabled": timedOn,
 		"referral_enabled":    referralOn,

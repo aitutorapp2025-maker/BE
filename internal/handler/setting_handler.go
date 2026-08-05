@@ -31,6 +31,7 @@ func NewSettingHandler(settings *repository.SettingRepository, mailer *email.Pub
 type settingRequest struct {
 	AppName            string `json:"app_name"`
 	SupportEmail       string `json:"support_email"`
+	SupportWhatsApp    string `json:"support_whatsapp"`
 	LogoURL            string `json:"logo_url"`
 	EmailNotifications bool   `json:"email_notifications"`
 	AutoApproveAnswers bool   `json:"auto_approve_answers"`
@@ -237,6 +238,7 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 		s.AppName = req.AppName
 	}
 	s.SupportEmail = strings.TrimSpace(req.SupportEmail)
+	s.SupportWhatsApp = digitsOnly(req.SupportWhatsApp) // wa.me needs bare digits
 	s.LogoURL = strings.TrimSpace(req.LogoURL)
 	s.EmailNotifications = req.EmailNotifications
 	s.AutoApproveAnswers = req.AutoApproveAnswers
@@ -462,4 +464,16 @@ func (h *SettingHandler) TestSMS(c *fiber.Ctx) error {
 		"success": true,
 		"message": "Test SMS queued for " + req.To + " — it should arrive shortly.",
 	})
+}
+
+// digitsOnly keeps only 0-9 from s (e.g. "+91 98765 43210" -> "919876543210"),
+// producing a wa.me-friendly WhatsApp number.
+func digitsOnly(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }

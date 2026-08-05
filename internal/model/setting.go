@@ -7,6 +7,9 @@ type Setting struct {
 	ID                 uint   `gorm:"primaryKey" json:"id"`
 	AppName            string `gorm:"size:120;not null;default:'Vaha AI'" json:"app_name"`
 	SupportEmail       string `gorm:"size:190" json:"support_email"`
+	// SupportWhatsApp is the number the app's "Chat with support" button opens
+	// (wa.me). Digits with country code, no "+" needed (e.g. 919876543210).
+	SupportWhatsApp string `gorm:"size:24" json:"support_whatsapp"`
 	LogoURL            string `gorm:"size:400" json:"logo_url"` // organisation logo (uploaded asset URL)
 	EmailNotifications bool   `gorm:"not null;default:true" json:"email_notifications"`
 	AutoApproveAnswers bool   `gorm:"not null;default:false" json:"auto_approve_answers"`
