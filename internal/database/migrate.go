@@ -104,6 +104,13 @@ func CreateIndexes(db *gorm.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_credit_student_created ON credit_ledger (student_id, created_at DESC)`,
 		// Referrals a student has made, newest first (admin list + student count).
 		`CREATE INDEX IF NOT EXISTS idx_referrals_referrer_created ON referrals (referrer_id, created_at DESC)`,
+		// Referral code uniqueness must be PARTIAL: the code is generated lazily so
+		// most rows share '' (empty), and soft-deleted rows are retained — a plain
+		// unique index rejects the 2nd empty / a resurrected email (SQLSTATE 23505).
+		// Drop any old plain unique index (from the earlier struct tag) and enforce
+		// uniqueness only over real, non-deleted codes.
+		`DROP INDEX IF EXISTS idx_students_referral_code`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_students_referral_code ON students (referral_code) WHERE referral_code <> '' AND deleted_at IS NULL`,
 	}
 	var firstErr error
 	for _, s := range stmts {

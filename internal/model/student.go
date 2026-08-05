@@ -52,12 +52,15 @@ type Student struct {
 	// expires with no auto-debit.
 	AutopayActive bool      `gorm:"not null;default:false" json:"autopay_active"`
 
-	// Referral program. ReferralCode is this student's own share code (unique,
-	// generated lazily the first time they open Refer & Earn). ReferredByID is the
-	// referrer's student id, set once when this student signs up under a code.
+	// Referral program. ReferralCode is this student's own share code, generated
+	// lazily the first time they open Refer & Earn — so most rows have '' until
+	// then. Uniqueness is enforced by a PARTIAL unique index (only non-empty,
+	// non-deleted codes) created in CreateIndexes, NOT a plain uniqueIndex tag: a
+	// plain unique index collides on the shared '' across students (SQLSTATE
+	// 23505). ReferredByID is the referrer's id, set once at signup under a code.
 	// ReferralRewardRupees is an accrued discount applied to — and cleared at — the
 	// next auto-debit. ReferralCount is how many students have joined via this code.
-	ReferralCode         string `gorm:"size:16;uniqueIndex" json:"referral_code"`
+	ReferralCode         string `gorm:"size:16" json:"referral_code"`
 	ReferredByID         uint   `gorm:"index" json:"referred_by_id"`
 	ReferralRewardRupees int    `gorm:"not null;default:0" json:"referral_reward_rupees"`
 	ReferralCount        int    `gorm:"not null;default:0" json:"referral_count"`
