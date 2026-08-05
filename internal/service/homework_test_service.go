@@ -18,13 +18,15 @@ type TestQuestion struct {
 }
 
 // aiGrade is the JSON we ask Claude to return when grading.
+type gradeResult struct {
+	N        int    `json:"n"`
+	Marks    int    `json:"marks"`
+	Feedback string `json:"feedback"`
+}
+
 type aiGrade struct {
-	Summary string `json:"summary"`
-	Results []struct {
-		N        int    `json:"n"`
-		Marks    int    `json:"marks"`
-		Feedback string `json:"feedback"`
-	} `json:"results"`
+	Summary string        `json:"summary"`
+	Results []gradeResult `json:"results"`
 }
 
 // GenerateTest asks the AI for a short written test on the homework, tailored to
@@ -171,23 +173,32 @@ Questions%s:
 	if err := json.Unmarshal([]byte(extractJSON(raw)), &g); err != nil {
 		return nil, fmt.Errorf("ai returned an unreadable grade: %w", err)
 	}
+	return s.finalizeGrade(st, homeworkID, questions, g.Summary, g.Results, kind)
+}
 
-	// Score = sum of per-question marks, clamped to each question's max.
+// finalizeGrade clamps each per-question mark to its max, sums the score, and
+// persists the HomeworkTest. Shared by the streaming + non-streaming graders.
+func (s *HomeworkService) finalizeGrade(st *model.Student, homeworkID uint, questions []TestQuestion, summary string, results []gradeResult, kind string) (*model.HomeworkTest, error) {
+	if kind != "oral" {
+		kind = "written"
+	}
+	maxScore := 0
 	markByN := map[int]int{}
 	for _, q := range questions {
+		maxScore += q.Marks
 		markByN[q.N] = q.Marks
 	}
 	score := 0
-	for i := range g.Results {
-		if max, ok := markByN[g.Results[i].N]; ok && g.Results[i].Marks > max {
-			g.Results[i].Marks = max
+	for i := range results {
+		if max, ok := markByN[results[i].N]; ok && results[i].Marks > max {
+			results[i].Marks = max
 		}
-		if g.Results[i].Marks < 0 {
-			g.Results[i].Marks = 0
+		if results[i].Marks < 0 {
+			results[i].Marks = 0
 		}
-		score += g.Results[i].Marks
+		score += results[i].Marks
 	}
-	detail, _ := json.Marshal(g.Results)
+	detail, _ := json.Marshal(results)
 
 	test := &model.HomeworkTest{
 		HomeworkID: homeworkID,
@@ -195,13 +206,80 @@ Questions%s:
 		Kind:       kind,
 		Score:      score,
 		MaxScore:   maxScore,
-		Summary:    strings.TrimSpace(g.Summary),
+		Summary:    strings.TrimSpace(summary),
 		Detail:     string(detail),
 	}
 	if err := s.homeworks.CreateTest(test); err != nil {
 		return nil, fmt.Errorf("save test: %w", err)
 	}
 	return test, nil
+}
+
+// GradeWrittenStream grades typed answers while streaming the encouraging
+// feedback summary token-by-token via onDelta. The model writes the prose
+// summary first (streamed), then a JSON block of per-question marks (parsed for
+// the score); the completed, persisted HomeworkTest is returned.
+func (s *HomeworkService) GradeWrittenStream(ctx context.Context, studentID, homeworkID uint, questions []TestQuestion, answers []string, kind string, onDelta func(string)) (*model.HomeworkTest, error) {
+	st, err := s.students.FindByID(studentID)
+	if err != nil {
+		return nil, fmt.Errorf("student: %w", err)
+	}
+	if _, err := s.homeworks.GetForStudent(homeworkID, studentID); err != nil {
+		return nil, err // ownership check
+	}
+	var qa strings.Builder
+	for i, q := range questions {
+		ans := ""
+		if i < len(answers) {
+			ans = strings.TrimSpace(answers[i])
+		}
+		fmt.Fprintf(&qa, "Q%d (%d marks): %s\nStudent's answer: %s\n\n", q.N, q.Marks, q.Question, ans)
+	}
+	system := "You are Vaha, a fair, encouraging tutor grading a written test for an " +
+		"Indian school student."
+	instruction := fmt.Sprintf(`%s
+Grade each answer out of its marks. Be fair and give partial credit.
+First, write 2-4 sentences of warm, encouraging overall feedback in %s as plain
+text (no JSON, no headings, no markdown).
+Then, on a new line, output ONLY this JSON (brief per-question feedback in %s):
+{"results":[{"n":1,"marks":2,"feedback":"..."}]}
+
+Questions:
+%s`, profileLine(st), teachingLang(st), teachingLang(st), qa.String())
+
+	// The model emits the prose summary first, then the JSON. Forward only the
+	// prose (everything before the first '{') to the client; keep the rest for
+	// scoring.
+	jsonStarted := false
+	wrapped := func(delta string) {
+		if jsonStarted || onDelta == nil {
+			return
+		}
+		if i := strings.IndexByte(delta, '{'); i >= 0 {
+			if i > 0 {
+				onDelta(delta[:i])
+			}
+			jsonStarted = true
+			return
+		}
+		onDelta(delta)
+	}
+	full, err := s.chat.CompleteStream(ctx, system, instruction, wrapped)
+	if err != nil {
+		return nil, fmt.Errorf("grade: %w", err)
+	}
+
+	summary := full
+	if i := strings.IndexByte(full, '{'); i >= 0 {
+		summary = full[:i]
+	}
+	var parsed struct {
+		Results []gradeResult `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(extractJSON(full)), &parsed); err != nil {
+		return nil, fmt.Errorf("ai returned an unreadable grade: %w", err)
+	}
+	return s.finalizeGrade(st, homeworkID, questions, summary, parsed.Results, kind)
 }
 
 // extractJSON pulls the first {...} object out of a model reply (tolerating code

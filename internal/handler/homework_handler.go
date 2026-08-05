@@ -335,6 +335,48 @@ func (h *HomeworkHandler) GradeTest(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"success": true, "test": test})
 }
 
+// GradeTestStream grades typed answers while streaming the feedback summary
+// token-by-token (SSE); the final `done` event carries the full graded test
+// (score + per-question feedback). Signed but not body-encrypted (see AskStream).
+// POST /api/v1/student/homework/:id/test/grade/stream
+func (h *HomeworkHandler) GradeTestStream(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	hwID, _ := strconv.ParseUint(c.Params("id"), 10, 64)
+	if hwID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid homework id")
+	}
+	var req gradeTestRequest
+	if err := c.BodyParser(&req); err != nil || len(req.Questions) == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "questions are required")
+	}
+	action := service.ActionWrittenExam
+	if req.Kind == "oral" {
+		action = service.ActionOralExam
+	}
+	if err := h.requireCredits(studentID, action); err != nil {
+		return err
+	}
+	hwSvc, credits := h.hw, h.credits
+	sid, hid := studentID, uint(hwID)
+	questions, answers, kind := req.Questions, req.Answers, req.Kind
+	return sseStream(c, func(writeEvent func(v any)) {
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+		test, err := hwSvc.GradeWrittenStream(ctx, sid, hid, questions, answers, kind, func(d string) {
+			writeEvent(map[string]any{"type": "delta", "text": d})
+		})
+		if err != nil {
+			writeEvent(map[string]string{"type": "error", "message": "Sorry, I couldn't grade that just now. Please try again."})
+			return
+		}
+		_, _ = credits.Charge(sid, action)
+		writeEvent(map[string]any{"type": "done", "test": test})
+	})
+}
+
 type doubtRequest struct {
 	Question string `json:"question"`
 }

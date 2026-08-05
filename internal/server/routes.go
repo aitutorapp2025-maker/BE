@@ -239,6 +239,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentStream.Post("/ask/stream", tutorHandler.AskStream)
 	studentStream.Post("/homework/:id/tasks/:taskId/teach/stream", homeworkHandler.TeachStream)
 	studentStream.Post("/homework/:id/tasks/:taskId/doubt/stream", homeworkHandler.DoubtStream)
+	studentStream.Post("/homework/:id/test/grade/stream", homeworkHandler.GradeTestStream)
 	// AI-tutor chat history — synced across devices (stored in Postgres).
 	studentProtected.Get("/chat", chatHistoryHandler.List)
 	studentProtected.Post("/chat/sync", chatHistoryHandler.Sync)
