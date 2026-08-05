@@ -115,6 +115,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	referralHandler := handler.NewReferralHandler(referralService, referralRepo)
 	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo, autopayEnabled, referralService)
 	tutorHandler := handler.NewTutorHandler(tutorService, studentRepo, creditService, autopayEnabled)
+	chatHistoryHandler := handler.NewChatHistoryHandler(repository.NewChatMessageRepository(d.DB))
 	creditHandler := handler.NewCreditHandler(creditService, studentRepo)
 	reportHandler := handler.NewReportHandler(studentRepo, creditRepo)
 
@@ -231,6 +232,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Post("/device-token", studentAuthHandler.SaveDeviceToken)
 	// Ask the AI tutor a textbook question (retrieval + Claude answer).
 	studentProtected.Post("/ask", tutorHandler.Ask)
+	// AI-tutor chat history — synced across devices (stored in Postgres).
+	studentProtected.Get("/chat", chatHistoryHandler.List)
+	studentProtected.Post("/chat/sync", chatHistoryHandler.Sync)
 	// Homework: upload a photo → AI reads it and splits it into tasks.
 	studentProtected.Post("/homework", homeworkHandler.Upload)
 	studentProtected.Get("/homework", homeworkHandler.List)

@@ -47,6 +47,7 @@ func Migrate(db *gorm.DB) error {
 		&model.AuditLog{},
 		&model.Referral{},
 		&model.Notification{},
+		&model.ChatMessage{},
 	)
 }
 
