@@ -224,7 +224,7 @@ func main() {
 
 	// Push worker: delivers admin broadcasts queued on RabbitMQ (resolves tokens,
 	// sends via FCM, prunes stale ones).
-	if err := worker.StartPushWorker(mq, pushSender, deviceRepo, log); err != nil {
+	if err := worker.StartPushWorker(mq, pushSender, deviceRepo, repository.NewNotificationRepository(db), log); err != nil {
 		log.Errorf("push worker: %v", err)
 	}
 

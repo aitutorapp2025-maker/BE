@@ -46,6 +46,7 @@ func Migrate(db *gorm.DB) error {
 		&model.HomeworkTest{},
 		&model.AuditLog{},
 		&model.Referral{},
+		&model.Notification{},
 	)
 }
 
@@ -104,6 +105,8 @@ func CreateIndexes(db *gorm.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_credit_student_created ON credit_ledger (student_id, created_at DESC)`,
 		// Referrals a student has made, newest first (admin list + student count).
 		`CREATE INDEX IF NOT EXISTS idx_referrals_referrer_created ON referrals (referrer_id, created_at DESC)`,
+		// Notification feed per student (broadcast rows share student_id 0).
+		`CREATE INDEX IF NOT EXISTS idx_notifications_student_created ON notifications (student_id, created_at DESC)`,
 		// Referral code uniqueness must be PARTIAL: the code is generated lazily so
 		// most rows share '' (empty), and soft-deleted rows are retained — a plain
 		// unique index rejects the 2nd empty / a resurrected email (SQLSTATE 23505).

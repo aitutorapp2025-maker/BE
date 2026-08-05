@@ -140,6 +140,21 @@ func (r *CreditRepository) RevenueEntriesFiltered(from, to *time.Time, kind stri
 	return rows, err
 }
 
+// PaymentsForStudent returns one student's money-in ledger rows (plan grants +
+// recharges) — their own payment history — newest first.
+func (r *CreditRepository) PaymentsForStudent(studentID uint, limit int) ([]model.CreditLedger, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	var rows []model.CreditLedger
+	err := r.db.
+		Where("student_id = ? AND revenue_paise > 0", studentID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&rows).Error
+	return rows, err
+}
+
 // SummaryRange is Summary restricted to an optional date range [from, to).
 func (r *CreditRepository) SummaryRange(from, to *time.Time) (*PnL, error) {
 	base := func() *gorm.DB {

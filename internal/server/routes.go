@@ -219,6 +219,12 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Put("/profile", studentAuthHandler.UpdateProfile)
 	// Refer & earn: the student's own code, share link and reward status.
 	studentProtected.Get("/referral", referralHandler.Me)
+	// Notification feed (broadcasts + targeted) for the bell + unread count.
+	studentProtected.Get("/notifications",
+		handler.NewNotificationFeedHandler(repository.NewNotificationRepository(d.DB)).List)
+	// The student's own payment history (Billing screen).
+	studentProtected.Get("/payments",
+		handler.NewStudentPaymentHandler(creditRepo).List)
 	// Soft-delete the account (kept for audit, hidden everywhere; re-register
 	// starts fresh).
 	studentProtected.Delete("/account", studentAuthHandler.DeleteAccount)
