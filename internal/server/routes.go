@@ -232,10 +232,13 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Post("/device-token", studentAuthHandler.SaveDeviceToken)
 	// Ask the AI tutor a textbook question (retrieval + Claude answer).
 	studentProtected.Post("/ask", tutorHandler.Ask)
-	// Streaming variant (SSE): words appear as the tutor generates them. Signed
-	// (JWT + nonce + HMAC) but NOT body-encrypted or audited — an SSE response
-	// can't pass through the buffering Encrypt/Audit middleware.
-	studentStream := student.Group("", middleware.SignedStudent(d.Cfg, sessStore))
+	// Streaming (SSE) endpoints: words appear as the tutor generates them. Signed
+	// (JWT + nonce + HMAC) and end-to-end encrypted — the request body is
+	// decrypted by DecryptRequest and each SSE frame is an AES-GCM envelope (see
+	// sseStream). Not audited: an SSE response can't pass the buffering Audit mw.
+	studentStream := student.Group("",
+		middleware.SignedStudent(d.Cfg, sessStore),
+		middleware.DecryptRequest(sessStore))
 	studentStream.Post("/ask/stream", tutorHandler.AskStream)
 	studentStream.Post("/homework/:id/tasks/:taskId/teach/stream", homeworkHandler.TeachStream)
 	studentStream.Post("/homework/:id/tasks/:taskId/doubt/stream", homeworkHandler.DoubtStream)

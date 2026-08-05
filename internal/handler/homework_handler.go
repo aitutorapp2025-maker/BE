@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/cryptox"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/gofiber/fiber/v2"
@@ -17,21 +18,36 @@ import (
 )
 
 // sseStream sets Server-Sent Events headers and runs fn as the body writer.
-// writeEvent marshals v to a `data: {json}\n\n` frame and flushes. Shared by the
-// streaming Teach/Doubt endpoints. The fiber ctx must not be touched inside fn
-// (it runs after the handler returns), so capture everything needed first.
+// writeEvent marshals v to JSON and, when the request carried an E2E session key
+// (set by middleware.DecryptRequest), encrypts each frame's payload — so the
+// whole stream stays end-to-end encrypted, frame by frame — before writing it as
+// `data: <payload>\n\n`. Shared by the streaming Ask/Teach/Doubt/Grade handlers.
+// The fiber ctx must not be touched inside fn (it runs after the handler
+// returns), so the key is captured up front here.
 func sseStream(c *fiber.Ctx, fn func(writeEvent func(v any))) error {
+	key, _ := c.Locals("enckey").([]byte)
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
 	c.Set("X-Accel-Buffering", "no")
+	if len(key) > 0 {
+		c.Set("X-Encrypted", "1") // frames are AES-GCM envelopes
+	}
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		fn(func(v any) {
 			b, err := json.Marshal(v)
 			if err != nil {
 				return
 			}
-			if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
+			payload := b
+			if len(key) > 0 {
+				enc, eerr := cryptox.Encrypt(key, b)
+				if eerr != nil {
+					return
+				}
+				payload = enc
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
 				return
 			}
 			_ = w.Flush()
@@ -228,7 +244,7 @@ func (h *HomeworkHandler) Teach(c *fiber.Ctx) error {
 }
 
 // TeachStream is the streaming (SSE) variant of Teach: the lesson streams in
-// token-by-token. Signed but not body-encrypted (see AskStream).
+// token-by-token. Signed + end-to-end encrypted (see AskStream).
 // POST /api/v1/student/homework/:id/tasks/:taskId/teach/stream
 func (h *HomeworkHandler) TeachStream(c *fiber.Ctx) error {
 	studentID, _ := c.Locals("student_id").(uint)
@@ -337,7 +353,7 @@ func (h *HomeworkHandler) GradeTest(c *fiber.Ctx) error {
 
 // GradeTestStream grades typed answers while streaming the feedback summary
 // token-by-token (SSE); the final `done` event carries the full graded test
-// (score + per-question feedback). Signed but not body-encrypted (see AskStream).
+// (score + per-question feedback). Signed + end-to-end encrypted (see AskStream).
 // POST /api/v1/student/homework/:id/test/grade/stream
 func (h *HomeworkHandler) GradeTestStream(c *fiber.Ctx) error {
 	studentID, _ := c.Locals("student_id").(uint)
@@ -409,7 +425,7 @@ func (h *HomeworkHandler) Doubt(c *fiber.Ctx) error {
 }
 
 // DoubtStream is the streaming (SSE) variant of Doubt: the answer streams in
-// token-by-token. Signed but not body-encrypted (see AskStream).
+// token-by-token. Signed + end-to-end encrypted (see AskStream).
 // POST /api/v1/student/homework/:id/tasks/:taskId/doubt/stream  { "question": "..." }
 func (h *HomeworkHandler) DoubtStream(c *fiber.Ctx) error {
 	studentID, _ := c.Locals("student_id").(uint)

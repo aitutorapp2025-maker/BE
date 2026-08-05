@@ -1,10 +1,7 @@
 package handler
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -110,8 +107,8 @@ func (h *TutorHandler) Ask(c *fiber.Ctx) error {
 
 // AskStream is the streaming variant of Ask (Server-Sent Events): the tutor's
 // answer is emitted token-by-token so words appear as they're generated.
-// POST /api/v1/student/ask/stream  (signed; not body-encrypted — SSE can't go
-// through the buffering Encrypt middleware).
+// POST /api/v1/student/ask/stream  (signed + end-to-end encrypted: the request
+// is decrypted by DecryptRequest and each SSE frame is an AES-GCM envelope).
 //
 // All gating (auth, autopay, credits) happens up front and can still return a
 // normal JSON error. Once streaming starts the body is a sequence of SSE events:
@@ -171,25 +168,9 @@ func (h *TutorHandler) AskStream(c *fiber.Ctx) error {
 	tutor := h.tutor
 	credits := h.credits
 
-	c.Set("Content-Type", "text/event-stream")
-	c.Set("Cache-Control", "no-cache")
-	c.Set("Connection", "keep-alive")
-	c.Set("X-Accel-Buffering", "no") // don't let nginx buffer the stream
-
-	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+	return sseStream(c, func(writeEvent func(v any)) {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
-
-		writeEvent := func(v any) bool {
-			b, err := json.Marshal(v)
-			if err != nil {
-				return false
-			}
-			if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
-				return false // client disconnected
-			}
-			return w.Flush() == nil
-		}
 
 		result, err := tutor.AskStream(ctx, question, sc, func(delta string) {
 			writeEvent(map[string]any{"type": "delta", "text": delta})
@@ -215,5 +196,4 @@ func (h *TutorHandler) AskStream(c *fiber.Ctx) error {
 			"credits":  bal,
 		})
 	})
-	return nil
 }

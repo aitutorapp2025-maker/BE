@@ -57,3 +57,31 @@ func Encrypt(store *session.Store) fiber.Handler {
 		return nil
 	}
 }
+
+// DecryptRequest is the request-only half of Encrypt, for streaming (SSE)
+// endpoints: it decrypts an encrypted request body and exposes the session AES
+// key via c.Locals("enckey") — so the handler can encrypt each SSE frame itself
+// and the ErrorHandler can encrypt error responses — but it does NOT buffer or
+// encrypt the (streamed) success response. Must run AFTER SignedStudent.
+func DecryptRequest(store *session.Store) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		var key []byte
+		if sid, _ := c.Locals("sid").(string); sid != "" {
+			key, _ = store.EncKey(c.Context(), sid)
+		} else if anon := c.Get("X-Session"); anon != "" {
+			key, _ = store.AnonEncKey(c.Context(), anon)
+		}
+		if len(key) == 0 {
+			return c.Next() // no key — pass through in the clear
+		}
+		c.Locals("enckey", key)
+		if c.Get("X-Encrypted") == "1" && len(c.Body()) > 0 {
+			plain, derr := cryptox.Decrypt(key, c.Body())
+			if derr != nil {
+				return fiber.NewError(fiber.StatusBadRequest, "could not decrypt request")
+			}
+			c.Request().SetBody(plain)
+		}
+		return c.Next()
+	}
+}
