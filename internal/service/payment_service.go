@@ -149,11 +149,24 @@ func (s *PaymentService) CreateMandateIntent(studentID, planID uint) (*MandateIn
 		if name == "" {
 			name = "Vaha AI Student"
 		}
-		custID, err := s.client.CreateCustomer(name, st.Email, normalizeContact(st.Phone))
+		contact := normalizeContact(st.Phone)
+		custID, err := s.client.CreateCustomer(name, st.Email, contact)
+		if err != nil && strings.Contains(err.Error(), "already exists") && contact != "" {
+			// A customer with this phone already exists at Razorpay — usually a
+			// prior attempt whose id we didn't persist, possibly with a different
+			// name/email (contact is Razorpay's unique key, so fail_existing:0
+			// can't reconcile that). Fetch the existing one by contact alone.
+			custID, err = s.client.CreateCustomer("", "", contact)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("create customer: %w", err)
 		}
 		st.RazorpayCustomerID = custID
+		// Persist the customer id IMMEDIATELY so a failure in the mandate steps
+		// below can't lose it (which is what caused the "already exists" loop).
+		if err := s.students.Update(st); err != nil {
+			return nil, fmt.Errorf("save customer: %w", err)
+		}
 	}
 	notes := map[string]string{
 		"student_id": strconv.FormatUint(uint64(st.ID), 10),
