@@ -145,7 +145,10 @@ func main() {
 
 	// SMTP config is read dynamically from the DB (admin settings) with the
 	// environment as a fallback, so it can be changed at runtime.
-	settingRepo := repository.NewSettingRepository(db)
+	// Shared no-expiry Redis cache for read-mostly config/master data — the same
+	// keys the HTTP layer (routes.go) uses, so a write there is seen here too.
+	cacheStore := cache.NewStore(rdb)
+	settingRepo := repository.NewSettingRepository(db, cacheStore)
 	smtpProvider := service.SMTPProvider(settingRepo, cfg.SMTP)
 
 	// Alerter emails an admin on server + background errors (shared by the HTTP
@@ -231,7 +234,7 @@ func main() {
 	razorpayClient := payment.NewClient(razorpayProvider)
 	paymentService := service.NewPaymentService(
 		razorpayClient, razorpayProvider,
-		studentRepo, repository.NewPlanRepository(db),
+		studentRepo, repository.NewPlanRepository(db, cacheStore),
 		service.NewCreditService(repository.NewCreditRepository(db)),
 		repository.NewPaymentEventRepository(db))
 

@@ -88,6 +88,9 @@ func (s *TutorService) Ingest(ctx context.Context, bookID uint, content string) 
 		s.setStatus(book, BookStatusFailed)
 		return fmt.Errorf("store chunks for book %d: %w", bookID, err)
 	}
+	// Refresh planner stats after the bulk load so the vector/btree indexes are
+	// costed correctly (best-effort).
+	s.chunks.Analyze()
 	s.setStatus(book, BookStatusIndexed)
 	return nil
 }

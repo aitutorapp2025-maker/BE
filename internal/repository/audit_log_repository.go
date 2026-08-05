@@ -22,6 +22,15 @@ func (r *AuditLogRepository) Record(a *model.AuditLog) error {
 	return r.db.Create(a).Error
 }
 
+// RecordBatch inserts many audit entries in one round trip (used by the buffered
+// writer). No-op on an empty slice.
+func (r *AuditLogRepository) RecordBatch(logs []model.AuditLog) error {
+	if len(logs) == 0 {
+		return nil
+	}
+	return r.db.CreateInBatches(logs, 100).Error
+}
+
 // DeleteOlderThan removes audit entries created before [cutoff] and returns how
 // many were deleted (used by the retention cleanup cron).
 func (r *AuditLogRepository) DeleteOlderThan(cutoff time.Time) (int64, error) {

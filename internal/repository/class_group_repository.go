@@ -1,8 +1,10 @@
 package repository
 
 import (
+	"context"
 	"errors"
 
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/cache"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"gorm.io/gorm"
 )
@@ -10,13 +12,24 @@ import (
 // ClassGroupRepository provides data access for the class-group master
 // (subject groups / streams offered for a class + board, e.g. Class 11
 // State Board → Computer Science / Biology / Commerce / Arts / Vocational).
+//
+// The active list (per class + board) is read on the app profile screen, so
+// it's cached (no expiry) under a per-(class,board) key and every write busts
+// the whole class-group key space.
 type ClassGroupRepository struct {
-	db *gorm.DB
+	db    *gorm.DB
+	cache *cache.Store
 }
 
-// NewClassGroupRepository builds a ClassGroupRepository.
-func NewClassGroupRepository(db *gorm.DB) *ClassGroupRepository {
-	return &ClassGroupRepository{db: db}
+// NewClassGroupRepository builds a ClassGroupRepository. cache may be nil.
+func NewClassGroupRepository(db *gorm.DB, c *cache.Store) *ClassGroupRepository {
+	return &ClassGroupRepository{db: db, cache: c}
+}
+
+// bust clears every cached active-group list (call after any write — a single
+// group can affect several class/board combinations).
+func (r *ClassGroupRepository) bust() {
+	r.cache.DelPattern(context.Background(), cache.KeyClassGroupsPrefix+"*")
 }
 
 // ordered applies the standard display order: class, then board, then the
@@ -42,9 +55,14 @@ func (r *ClassGroupRepository) ListByClass(className string) ([]model.ClassGroup
 
 // ListActive returns the enabled groups a student may pick for a class +
 // board. Groups with a blank board apply to every board, so they're included
-// alongside the board-specific ones.
+// alongside the board-specific ones. Cached per (class, board).
 func (r *ClassGroupRepository) ListActive(className, board string) ([]model.ClassGroup, error) {
+	ctx := context.Background()
+	key := cache.KeyClassGroupsPrefix + className + "|" + board
 	var groups []model.ClassGroup
+	if r.cache.Get(ctx, key, &groups) {
+		return groups, nil
+	}
 	q := r.ordered().Where("active = ?", true)
 	if className != "" {
 		q = q.Where("class_name = ?", className)
@@ -52,8 +70,11 @@ func (r *ClassGroupRepository) ListActive(className, board string) ([]model.Clas
 	if board != "" {
 		q = q.Where("board = ? OR board = ''", board)
 	}
-	err := q.Find(&groups).Error
-	return groups, err
+	if err := q.Find(&groups).Error; err != nil {
+		return nil, err
+	}
+	r.cache.Set(ctx, key, groups)
+	return groups, nil
 }
 
 // FindByID returns a group by id, or ErrNotFound.
@@ -71,17 +92,29 @@ func (r *ClassGroupRepository) FindByID(id uint) (*model.ClassGroup, error) {
 
 // Create inserts a new group.
 func (r *ClassGroupRepository) Create(g *model.ClassGroup) error {
-	return r.db.Create(g).Error
+	if err := r.db.Create(g).Error; err != nil {
+		return err
+	}
+	r.bust()
+	return nil
 }
 
 // Update saves changes to a group.
 func (r *ClassGroupRepository) Update(g *model.ClassGroup) error {
-	return r.db.Save(g).Error
+	if err := r.db.Save(g).Error; err != nil {
+		return err
+	}
+	r.bust()
+	return nil
 }
 
 // Delete removes a group by id.
 func (r *ClassGroupRepository) Delete(id uint) error {
-	return r.db.Delete(&model.ClassGroup{}, id).Error
+	if err := r.db.Delete(&model.ClassGroup{}, id).Error; err != nil {
+		return err
+	}
+	r.bust()
+	return nil
 }
 
 // RenameClass repoints every group of a class when the class is renamed, so
@@ -90,7 +123,11 @@ func (r *ClassGroupRepository) RenameClass(oldName, newName string) error {
 	if oldName == "" || oldName == newName {
 		return nil
 	}
-	return r.db.Model(&model.ClassGroup{}).
+	if err := r.db.Model(&model.ClassGroup{}).
 		Where("class_name = ?", oldName).
-		Update("class_name", newName).Error
+		Update("class_name", newName).Error; err != nil {
+		return err
+	}
+	r.bust()
+	return nil
 }

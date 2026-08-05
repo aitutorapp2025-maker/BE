@@ -64,14 +64,22 @@ func MigrateVectors(db *gorm.DB) (bool, error) {
 	}
 	// ANN index for fast RAG similarity search — without it, every question scans
 	// all chunks. HNSW (pgvector ≥ 0.5) with cosine ops matches the `<=>` query.
-	// Best-effort: on older pgvector the CREATE fails and we fall back to a scan.
+	// m=16 / ef_construction=64 are pgvector's balanced defaults, set explicitly
+	// so the graph quality is predictable as the corpus grows (higher = better
+	// recall, slower build). Best-effort: on older pgvector the CREATE fails and
+	// we fall back to a scan.
 	_ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_book_chunks_embedding ` +
-		`ON book_chunks USING hnsw (embedding vector_cosine_ops)`).Error
+		`ON book_chunks USING hnsw (embedding vector_cosine_ops) ` +
+		`WITH (m = 16, ef_construction = 64)`).Error
 	// The RAG query filters by class+medium before ordering by vector distance;
 	// a btree on the filter columns gives the planner a fast filtered path (HNSW
 	// alone doesn't filter well). Best-effort.
 	_ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_book_chunks_class_medium ` +
 		`ON book_chunks (class_name, medium)`).Error
+	// Refresh planner statistics so it costs the new indexes correctly (cheap on
+	// an empty/small table at boot; a no-op-ish safety net). Ingest also ANALYZEs
+	// after a bulk load so estimates stay accurate as the corpus grows.
+	_ = db.Exec(`ANALYZE book_chunks`).Error
 	return true, nil
 }
 

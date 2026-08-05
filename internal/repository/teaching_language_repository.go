@@ -1,20 +1,31 @@
 package repository
 
 import (
+	"context"
 	"errors"
 
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/cache"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"gorm.io/gorm"
 )
 
-// TeachingLanguageRepository provides data access for the teaching-language master.
+// TeachingLanguageRepository provides data access for the teaching-language
+// master. The active list is read on the app profile screen, so it's cached
+// (no expiry) and busted on any create/update/delete.
 type TeachingLanguageRepository struct {
-	db *gorm.DB
+	db    *gorm.DB
+	cache *cache.Store
 }
 
-// NewTeachingLanguageRepository builds a TeachingLanguageRepository.
-func NewTeachingLanguageRepository(db *gorm.DB) *TeachingLanguageRepository {
-	return &TeachingLanguageRepository{db: db}
+// NewTeachingLanguageRepository builds a TeachingLanguageRepository. cache may
+// be nil (caching off).
+func NewTeachingLanguageRepository(db *gorm.DB, c *cache.Store) *TeachingLanguageRepository {
+	return &TeachingLanguageRepository{db: db, cache: c}
+}
+
+// bust clears the cached active-languages list (call after any write).
+func (r *TeachingLanguageRepository) bust() {
+	r.cache.Del(context.Background(), cache.KeyTeachLangsActive)
 }
 
 // List returns all teaching languages (admin), oldest first.
@@ -24,11 +35,18 @@ func (r *TeachingLanguageRepository) List() ([]model.TeachingLanguage, error) {
 	return langs, err
 }
 
-// ListActive returns only the enabled teaching languages (for the app).
+// ListActive returns only the enabled teaching languages (for the app), cached.
 func (r *TeachingLanguageRepository) ListActive() ([]model.TeachingLanguage, error) {
+	ctx := context.Background()
 	var langs []model.TeachingLanguage
-	err := r.db.Where("active = ?", true).Order("id ASC").Find(&langs).Error
-	return langs, err
+	if r.cache.Get(ctx, cache.KeyTeachLangsActive, &langs) {
+		return langs, nil
+	}
+	if err := r.db.Where("active = ?", true).Order("id ASC").Find(&langs).Error; err != nil {
+		return nil, err
+	}
+	r.cache.Set(ctx, cache.KeyTeachLangsActive, langs)
+	return langs, nil
 }
 
 // FindByID returns a teaching language by id, or ErrNotFound.
@@ -46,15 +64,27 @@ func (r *TeachingLanguageRepository) FindByID(id uint) (*model.TeachingLanguage,
 
 // Create inserts a new teaching language.
 func (r *TeachingLanguageRepository) Create(l *model.TeachingLanguage) error {
-	return r.db.Create(l).Error
+	if err := r.db.Create(l).Error; err != nil {
+		return err
+	}
+	r.bust()
+	return nil
 }
 
 // Update saves changes to a teaching language.
 func (r *TeachingLanguageRepository) Update(l *model.TeachingLanguage) error {
-	return r.db.Save(l).Error
+	if err := r.db.Save(l).Error; err != nil {
+		return err
+	}
+	r.bust()
+	return nil
 }
 
 // Delete removes a teaching language by id.
 func (r *TeachingLanguageRepository) Delete(id uint) error {
-	return r.db.Delete(&model.TeachingLanguage{}, id).Error
+	if err := r.db.Delete(&model.TeachingLanguage{}, id).Error; err != nil {
+		return err
+	}
+	r.bust()
+	return nil
 }

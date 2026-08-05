@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/ai"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/cache"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/email"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/fcm"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/handler"
@@ -19,28 +20,32 @@ import (
 // API grows (auth, students, plans, classes, books, ...).
 func registerRoutes(app *fiber.App, d Deps) {
 	// ── Dependency wiring ────────────────────────────────────────────────
+	// No-expiry Redis cache for read-mostly config/master data (settings, plans,
+	// teaching languages, class groups, landing). Each write busts its key(s).
+	cacheStore := cache.NewStore(d.Redis)
+
 	adminRepo := repository.NewAdminRepository(d.DB)
 	studentRepo := repository.NewStudentRepository(d.DB)
 	classRepo := repository.NewClassRepository(d.DB)
-	classGroupRepo := repository.NewClassGroupRepository(d.DB)
+	classGroupRepo := repository.NewClassGroupRepository(d.DB, cacheStore)
 	bookRepo := repository.NewBookRepository(d.DB)
 	bookChunkRepo := repository.NewBookChunkRepository(d.DB)
 	creditRepo := repository.NewCreditRepository(d.DB)
-	planRepo := repository.NewPlanRepository(d.DB)
-	settingRepo := repository.NewSettingRepository(d.DB)
+	planRepo := repository.NewPlanRepository(d.DB, cacheStore)
+	settingRepo := repository.NewSettingRepository(d.DB, cacheStore)
 	deviceTokenRepo := repository.NewDeviceTokenRepository(d.DB)
 	legalRepo := repository.NewLegalRepository(d.DB)
 	dashboardRepo := repository.NewDashboardRepository(d.DB)
-	teachingLangRepo := repository.NewTeachingLanguageRepository(d.DB)
+	teachingLangRepo := repository.NewTeachingLanguageRepository(d.DB, cacheStore)
 
 	// Landing content repositories.
-	navRepo := repository.NewOrderedRepo[model.LandingNavItem](d.DB)
-	statRepo := repository.NewOrderedRepo[model.LandingStat](d.DB)
-	featureRepo := repository.NewOrderedRepo[model.LandingFeature](d.DB)
-	testimonialRepo := repository.NewOrderedRepo[model.LandingTestimonial](d.DB)
-	faqRepo := repository.NewOrderedRepo[model.LandingFaq](d.DB)
-	landingTextRepo := repository.NewLandingTextRepo(d.DB)
-	landingSeoRepo := repository.NewLandingSeoRepo(d.DB)
+	navRepo := repository.NewOrderedRepo[model.LandingNavItem](d.DB, cacheStore)
+	statRepo := repository.NewOrderedRepo[model.LandingStat](d.DB, cacheStore)
+	featureRepo := repository.NewOrderedRepo[model.LandingFeature](d.DB, cacheStore)
+	testimonialRepo := repository.NewOrderedRepo[model.LandingTestimonial](d.DB, cacheStore)
+	faqRepo := repository.NewOrderedRepo[model.LandingFaq](d.DB, cacheStore)
+	landingTextRepo := repository.NewLandingTextRepo(d.DB, cacheStore)
+	landingSeoRepo := repository.NewLandingSeoRepo(d.DB, cacheStore)
 	contactRepo := repository.NewContactRepository(d.DB)
 
 	emailPublisher := email.NewPublisher(d.MQ, func() bool { return d.SMTP().Enabled() })
@@ -89,7 +94,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	settingHandler := handler.NewSettingHandler(settingRepo, emailPublisher, smsPublisher, tutorService.Probe)
 
 	landingHandler := handler.NewLandingHandler(
-		navRepo, statRepo, featureRepo, testimonialRepo, faqRepo, landingTextRepo, landingSeoRepo, settingRepo)
+		navRepo, statRepo, featureRepo, testimonialRepo, faqRepo, landingTextRepo, landingSeoRepo, settingRepo, cacheStore)
 	navCrud := handler.NewLandingCrudHandler[model.LandingNavItem, *model.LandingNavItem](navRepo, "nav item")
 	statCrud := handler.NewLandingCrudHandler[model.LandingStat, *model.LandingStat](statRepo, "stat")
 	featureCrud := handler.NewLandingCrudHandler[model.LandingFeature, *model.LandingFeature](featureRepo, "feature")
@@ -146,18 +151,19 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Audit trail: record every authenticated action (admin + student streams).
 	// The recorder persists asynchronously so it never blocks the response.
 	auditRepo := repository.NewAuditLogRepository(d.DB)
+	// Buffer + batch audit writes so a burst of requests becomes a few multi-row
+	// INSERTs instead of one goroutine+INSERT each. Enqueue is non-blocking.
+	auditBuffer := repository.NewAuditBuffer(auditRepo)
 	auditRecord := func(e middleware.AuditEntry) {
-		go func() {
-			_ = auditRepo.Record(&model.AuditLog{
-				ActorType:  e.ActorType,
-				ActorID:    e.ActorID,
-				ActorLabel: e.ActorLabel,
-				Method:     e.Method,
-				Path:       e.Path,
-				Status:     e.Status,
-				IP:         e.IP,
-			})
-		}()
+		auditBuffer.Enqueue(model.AuditLog{
+			ActorType:  e.ActorType,
+			ActorID:    e.ActorID,
+			ActorLabel: e.ActorLabel,
+			Method:     e.Method,
+			Path:       e.Path,
+			Status:     e.Status,
+			IP:         e.IP,
+		})
 	}
 	audit := middleware.Audit(auditRecord)
 

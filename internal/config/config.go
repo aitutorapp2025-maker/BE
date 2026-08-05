@@ -134,9 +134,17 @@ type RabbitMQConfig struct {
 func (c Config) IsProduction() bool { return c.AppEnv == "production" }
 
 // DSN builds the GORM/PostgreSQL data source name (pgx/lib-pq key-value form).
+//
+// It sets per-connection guardrails so a single pathological query can't pile
+// up connections and take the pool down:
+//   - statement_timeout=60s — cancels any query running longer than a minute
+//     (a web request query taking that long is a runaway; index builds/ingest
+//     fit comfortably under it for a normal corpus).
+//   - lock_timeout=10s — fail fast instead of blocking on a held lock.
 func (d DBConfig) DSN() string {
 	return fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=%s "+
+			"options='-c statement_timeout=60000 -c lock_timeout=10000'",
 		d.Host, d.Port, d.User, d.Password, d.Name, d.SSLMode, d.TimeZone)
 }
 

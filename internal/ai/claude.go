@@ -30,7 +30,7 @@ type Chat struct {
 
 // NewChat builds a Chat client that reads its key + model from cfg per call.
 func NewChat(cfg config.AIConfigFunc) *Chat {
-	return &Chat{cfg: cfg, client: &http.Client{Timeout: 90 * time.Second}}
+	return &Chat{cfg: cfg, client: apiClient(90 * time.Second)}
 }
 
 type anthropicRequest struct {

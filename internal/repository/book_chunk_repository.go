@@ -30,6 +30,13 @@ func (r *BookChunkRepository) Insert(chunks []model.BookChunk) error {
 	return r.db.CreateInBatches(chunks, 50).Error
 }
 
+// Analyze refreshes planner statistics for book_chunks. Called once after a bulk
+// ingest so the planner costs the HNSW/btree indexes correctly as the corpus
+// grows. Best-effort — a failure here must not fail the ingest.
+func (r *BookChunkRepository) Analyze() {
+	_ = r.db.Exec("ANALYZE book_chunks").Error
+}
+
 // CountByBook returns how many chunks a book currently has.
 func (r *BookChunkRepository) CountByBook(bookID uint) (int64, error) {
 	var n int64

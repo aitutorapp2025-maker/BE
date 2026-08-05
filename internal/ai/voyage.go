@@ -33,7 +33,7 @@ type Embedder struct {
 
 // NewEmbedder builds an Embedder. rdb (optional) caches query embeddings.
 func NewEmbedder(cfg config.AIConfigFunc, rdb *redis.Client) *Embedder {
-	return &Embedder{cfg: cfg, client: &http.Client{Timeout: 60 * time.Second}, rdb: rdb}
+	return &Embedder{cfg: cfg, client: apiClient(60 * time.Second), rdb: rdb}
 }
 
 type voyageRequest struct {
