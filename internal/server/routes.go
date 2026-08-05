@@ -232,6 +232,11 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Post("/device-token", studentAuthHandler.SaveDeviceToken)
 	// Ask the AI tutor a textbook question (retrieval + Claude answer).
 	studentProtected.Post("/ask", tutorHandler.Ask)
+	// Streaming variant (SSE): words appear as the tutor generates them. Signed
+	// (JWT + nonce + HMAC) but NOT body-encrypted or audited — an SSE response
+	// can't pass through the buffering Encrypt/Audit middleware.
+	studentStream := student.Group("", middleware.SignedStudent(d.Cfg, sessStore))
+	studentStream.Post("/ask/stream", tutorHandler.AskStream)
 	// AI-tutor chat history — synced across devices (stored in Postgres).
 	studentProtected.Get("/chat", chatHistoryHandler.List)
 	studentProtected.Post("/chat/sync", chatHistoryHandler.Sync)

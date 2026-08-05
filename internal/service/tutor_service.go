@@ -143,6 +143,39 @@ func (s *TutorService) Ask(ctx context.Context, question string, sc StudentConte
 	return &AskResult{Answer: strings.TrimSpace(answer), Sources: sources, Grounded: true}, nil
 }
 
+// AskStream is the streaming variant of Ask: it retrieves the textbook passages
+// and then streams Claude's answer, invoking onDelta for each chunk as it is
+// generated. The returned AskResult carries the full text + sources once done.
+// When nothing is indexed for the class it streams the same "not loaded" message
+// (ungrounded, so the caller shouldn't charge a credit).
+func (s *TutorService) AskStream(ctx context.Context, question string, sc StudentContext, onDelta func(string)) (*AskResult, error) {
+	question = strings.TrimSpace(question)
+	if question == "" {
+		return nil, fmt.Errorf("empty question")
+	}
+	qv, err := s.embedder.EmbedQuery(ctx, question)
+	if err != nil {
+		return nil, fmt.Errorf("embed question: %w", err)
+	}
+	sources, err := s.chunks.Search(qv, sc.Class, sc.Medium, "", s.topK)
+	if err != nil {
+		return nil, fmt.Errorf("retrieve: %w", err)
+	}
+	if len(sources) == 0 {
+		msg := "I don't have the textbook for your class loaded yet, so I can't give a " +
+			"textbook-based answer. Please check back soon — your teacher is adding the books."
+		if onDelta != nil {
+			onDelta(msg)
+		}
+		return &AskResult{Answer: msg, Grounded: false}, nil
+	}
+	full, err := s.chat.CompleteStream(ctx, tutorSystemPrompt(sc), buildUserPrompt(question, sources), onDelta)
+	if err != nil {
+		return nil, fmt.Errorf("generate answer: %w", err)
+	}
+	return &AskResult{Answer: strings.TrimSpace(full), Sources: sources, Grounded: true}, nil
+}
+
 // Teach produces a short lesson for a homework task topic, tailored to the
 // student's class + language and grounded in their textbook passages when any
 // match. Unlike Ask (strict grounding), teaching may elaborate pedagogically
