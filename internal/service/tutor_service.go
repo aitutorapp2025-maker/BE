@@ -201,6 +201,28 @@ func (s *TutorService) Teach(ctx context.Context, topic string, sc StudentContex
 	return &AskResult{Answer: strings.TrimSpace(lesson), Sources: sources, Grounded: len(sources) > 0}, nil
 }
 
+// TeachStream is the streaming variant of Teach: it streams the lesson text via
+// onDelta as it's generated and returns the full text once done.
+func (s *TutorService) TeachStream(ctx context.Context, topic string, sc StudentContext, onDelta func(string)) (*AskResult, error) {
+	topic = strings.TrimSpace(topic)
+	if topic == "" {
+		return nil, fmt.Errorf("empty topic")
+	}
+	qv, err := s.embedder.EmbedQuery(ctx, topic)
+	if err != nil {
+		return nil, fmt.Errorf("embed topic: %w", err)
+	}
+	sources, err := s.chunks.Search(qv, sc.Class, sc.Medium, "", s.topK)
+	if err != nil {
+		return nil, fmt.Errorf("retrieve: %w", err)
+	}
+	full, err := s.chat.CompleteStream(ctx, teachSystemPrompt(sc), buildTeachPrompt(topic, sources), onDelta)
+	if err != nil {
+		return nil, fmt.Errorf("generate lesson: %w", err)
+	}
+	return &AskResult{Answer: strings.TrimSpace(full), Sources: sources, Grounded: len(sources) > 0}, nil
+}
+
 // AnswerDoubt answers a student's follow-up question about a specific homework
 // task, grounded in their textbooks when a passage matches, in their language.
 // More conversational than Ask (it always tries to help with the doubt), but
@@ -223,6 +245,28 @@ func (s *TutorService) AnswerDoubt(ctx context.Context, topic, question string, 
 		return nil, fmt.Errorf("answer doubt: %w", err)
 	}
 	return &AskResult{Answer: strings.TrimSpace(answer), Sources: sources, Grounded: len(sources) > 0}, nil
+}
+
+// AnswerDoubtStream is the streaming variant of AnswerDoubt: it streams the
+// answer via onDelta as it's generated and returns the full text once done.
+func (s *TutorService) AnswerDoubtStream(ctx context.Context, topic, question string, sc StudentContext, onDelta func(string)) (*AskResult, error) {
+	question = strings.TrimSpace(question)
+	if question == "" {
+		return nil, fmt.Errorf("empty question")
+	}
+	qv, err := s.embedder.EmbedQuery(ctx, topic+" "+question)
+	if err != nil {
+		return nil, fmt.Errorf("embed doubt: %w", err)
+	}
+	sources, err := s.chunks.Search(qv, sc.Class, sc.Medium, "", s.topK)
+	if err != nil {
+		return nil, fmt.Errorf("retrieve: %w", err)
+	}
+	full, err := s.chat.CompleteStream(ctx, doubtSystemPrompt(sc), buildDoubtPrompt(topic, question, sources), onDelta)
+	if err != nil {
+		return nil, fmt.Errorf("answer doubt: %w", err)
+	}
+	return &AskResult{Answer: strings.TrimSpace(full), Sources: sources, Grounded: len(sources) > 0}, nil
 }
 
 // Probe verifies the configured AI keys with a tiny round-trip: one embedding

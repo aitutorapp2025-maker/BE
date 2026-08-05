@@ -95,6 +95,50 @@ func (s *HomeworkService) TeachTask(ctx context.Context, studentID, homeworkID, 
 	return res, false, nil
 }
 
+// TeachTaskStream is the streaming variant of TeachTask. A cached lesson is
+// streamed back in one delta (still free); a fresh lesson streams as it's
+// generated and is cached afterwards. Returns (result, cached, error).
+func (s *HomeworkService) TeachTaskStream(ctx context.Context, studentID, homeworkID, taskID uint, onDelta func(string)) (*AskResult, bool, error) {
+	hw, err := s.homeworks.GetForStudent(homeworkID, studentID)
+	if err != nil {
+		return nil, false, err
+	}
+	var topic, cached string
+	for _, t := range hw.Tasks {
+		if t.ID == taskID {
+			topic = strings.TrimSpace(t.Title + ". " + t.Description)
+			cached = t.Lesson
+			break
+		}
+	}
+	if topic == "" {
+		return nil, false, fmt.Errorf("task not found in this homework")
+	}
+	if strings.TrimSpace(cached) != "" {
+		if onDelta != nil {
+			onDelta(cached)
+		}
+		return &AskResult{Answer: cached, Grounded: true}, true, nil
+	}
+	st, err := s.students.FindByID(studentID)
+	if err != nil {
+		return nil, false, fmt.Errorf("student: %w", err)
+	}
+	sc := StudentContext{
+		Class:            st.StudentClass,
+		Medium:           st.Medium,
+		Board:            st.Board,
+		Group:            st.StudentGroup,
+		TeachingLanguage: st.TeachingLanguage,
+	}
+	res, err := s.tutor.TeachStream(ctx, topic, sc, onDelta)
+	if err != nil {
+		return nil, false, err
+	}
+	_ = s.homeworks.SaveTaskLesson(taskID, res.Answer) // cache for next time
+	return res, false, nil
+}
+
 // AskDoubt answers a follow-up question about a specific task, scoped to the
 // student and grounded in their textbooks.
 func (s *HomeworkService) AskDoubt(ctx context.Context, studentID, homeworkID, taskID uint, question string) (*AskResult, error) {
@@ -124,6 +168,37 @@ func (s *HomeworkService) AskDoubt(ctx context.Context, studentID, homeworkID, t
 		TeachingLanguage: st.TeachingLanguage,
 	}
 	return s.tutor.AnswerDoubt(ctx, topic, question, sc)
+}
+
+// AskDoubtStream is the streaming variant of AskDoubt: it streams the answer via
+// onDelta as it's generated and returns the full text once done.
+func (s *HomeworkService) AskDoubtStream(ctx context.Context, studentID, homeworkID, taskID uint, question string, onDelta func(string)) (*AskResult, error) {
+	hw, err := s.homeworks.GetForStudent(homeworkID, studentID)
+	if err != nil {
+		return nil, err
+	}
+	var topic string
+	for _, t := range hw.Tasks {
+		if t.ID == taskID {
+			topic = strings.TrimSpace(t.Title + ". " + t.Description)
+			break
+		}
+	}
+	if topic == "" {
+		return nil, fmt.Errorf("task not found in this homework")
+	}
+	st, err := s.students.FindByID(studentID)
+	if err != nil {
+		return nil, fmt.Errorf("student: %w", err)
+	}
+	sc := StudentContext{
+		Class:            st.StudentClass,
+		Medium:           st.Medium,
+		Board:            st.Board,
+		Group:            st.StudentGroup,
+		TeachingLanguage: st.TeachingLanguage,
+	}
+	return s.tutor.AnswerDoubtStream(ctx, topic, question, sc, onDelta)
 }
 
 // aiHomework is the JSON shape we ask Claude to return.

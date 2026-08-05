@@ -237,6 +237,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// can't pass through the buffering Encrypt/Audit middleware.
 	studentStream := student.Group("", middleware.SignedStudent(d.Cfg, sessStore))
 	studentStream.Post("/ask/stream", tutorHandler.AskStream)
+	studentStream.Post("/homework/:id/tasks/:taskId/teach/stream", homeworkHandler.TeachStream)
+	studentStream.Post("/homework/:id/tasks/:taskId/doubt/stream", homeworkHandler.DoubtStream)
 	// AI-tutor chat history — synced across devices (stored in Postgres).
 	studentProtected.Get("/chat", chatHistoryHandler.List)
 	studentProtected.Post("/chat/sync", chatHistoryHandler.Sync)

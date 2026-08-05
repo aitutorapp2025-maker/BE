@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -13,6 +15,30 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/redis/go-redis/v9"
 )
+
+// sseStream sets Server-Sent Events headers and runs fn as the body writer.
+// writeEvent marshals v to a `data: {json}\n\n` frame and flushes. Shared by the
+// streaming Teach/Doubt endpoints. The fiber ctx must not be touched inside fn
+// (it runs after the handler returns), so capture everything needed first.
+func sseStream(c *fiber.Ctx, fn func(writeEvent func(v any))) error {
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-cache")
+	c.Set("Connection", "keep-alive")
+	c.Set("X-Accel-Buffering", "no")
+	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		fn(func(v any) {
+			b, err := json.Marshal(v)
+			if err != nil {
+				return
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
+				return
+			}
+			_ = w.Flush()
+		})
+	})
+	return nil
+}
 
 // maxUploadsPerDay caps homework uploads per student per day (abuse guard, on
 // top of credit metering).
@@ -201,6 +227,41 @@ func (h *HomeworkHandler) Teach(c *fiber.Ctx) error {
 	})
 }
 
+// TeachStream is the streaming (SSE) variant of Teach: the lesson streams in
+// token-by-token. Signed but not body-encrypted (see AskStream).
+// POST /api/v1/student/homework/:id/tasks/:taskId/teach/stream
+func (h *HomeworkHandler) TeachStream(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	hwID, _ := strconv.ParseUint(c.Params("id"), 10, 64)
+	taskID, _ := strconv.ParseUint(c.Params("taskId"), 10, 64)
+	if hwID == 0 || taskID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid ids")
+	}
+	if err := h.requireCredits(studentID, service.ActionTeach); err != nil {
+		return err
+	}
+	hwSvc, credits := h.hw, h.credits
+	sid, hid, tid := studentID, uint(hwID), uint(taskID)
+	return sseStream(c, func(writeEvent func(v any)) {
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		res, cached, err := hwSvc.TeachTaskStream(ctx, sid, hid, tid, func(d string) {
+			writeEvent(map[string]any{"type": "delta", "text": d})
+		})
+		if err != nil {
+			writeEvent(map[string]string{"type": "error", "message": "Sorry, the lesson could not be loaded. Please try again."})
+			return
+		}
+		if !cached {
+			_, _ = credits.Charge(sid, service.ActionTeach)
+		}
+		writeEvent(map[string]any{"type": "done", "grounded": res.Grounded})
+	})
+}
+
 // GenerateTest returns a short written test for the homework (Phase 5).
 // POST /api/v1/student/homework/:id/test
 func (h *HomeworkHandler) GenerateTest(c *fiber.Ctx) error {
@@ -303,6 +364,44 @@ func (h *HomeworkHandler) Doubt(c *fiber.Ctx) error {
 	}
 	_, _ = h.credits.Charge(studentID, service.ActionDoubt)
 	return c.JSON(fiber.Map{"success": true, "answer": res.Answer, "grounded": res.Grounded})
+}
+
+// DoubtStream is the streaming (SSE) variant of Doubt: the answer streams in
+// token-by-token. Signed but not body-encrypted (see AskStream).
+// POST /api/v1/student/homework/:id/tasks/:taskId/doubt/stream  { "question": "..." }
+func (h *HomeworkHandler) DoubtStream(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	hwID, _ := strconv.ParseUint(c.Params("id"), 10, 64)
+	taskID, _ := strconv.ParseUint(c.Params("taskId"), 10, 64)
+	if hwID == 0 || taskID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid ids")
+	}
+	var req doubtRequest
+	if err := c.BodyParser(&req); err != nil || strings.TrimSpace(req.Question) == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "a question is required")
+	}
+	if err := h.requireCredits(studentID, service.ActionDoubt); err != nil {
+		return err
+	}
+	hwSvc, credits := h.hw, h.credits
+	sid, hid, tid := studentID, uint(hwID), uint(taskID)
+	question := strings.TrimSpace(req.Question)
+	return sseStream(c, func(writeEvent func(v any)) {
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		res, err := hwSvc.AskDoubtStream(ctx, sid, hid, tid, question, func(d string) {
+			writeEvent(map[string]any{"type": "delta", "text": d})
+		})
+		if err != nil {
+			writeEvent(map[string]string{"type": "error", "message": "Sorry, I couldn't answer that just now. Please try again."})
+			return
+		}
+		_, _ = credits.Charge(sid, service.ActionDoubt)
+		writeEvent(map[string]any{"type": "done", "grounded": res.Grounded})
+	})
 }
 
 type taskStatusRequest struct {
