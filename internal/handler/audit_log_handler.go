@@ -55,3 +55,17 @@ func (h *AuditLogHandler) List(c *fiber.Ctx) error {
 		"page_size": size,
 	})
 }
+
+// Get returns one audit entry with its full request/response payloads.
+// GET /api/v1/admin/audit-logs/:id
+func (h *AuditLogHandler) Get(c *fiber.Ctx) error {
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil || id == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid id")
+	}
+	log, err := h.audits.FindByID(uint(id))
+	if err != nil {
+		return fiber.NewError(fiber.StatusNotFound, "audit entry not found")
+	}
+	return c.JSON(fiber.Map{"success": true, "log": log})
+}

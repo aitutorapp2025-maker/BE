@@ -156,13 +156,18 @@ func registerRoutes(app *fiber.App, d Deps) {
 	auditBuffer := repository.NewAuditBuffer(auditRepo)
 	auditRecord := func(e middleware.AuditEntry) {
 		auditBuffer.Enqueue(model.AuditLog{
-			ActorType:  e.ActorType,
-			ActorID:    e.ActorID,
-			ActorLabel: e.ActorLabel,
-			Method:     e.Method,
-			Path:       e.Path,
-			Status:     e.Status,
-			IP:         e.IP,
+			ActorType:    e.ActorType,
+			ActorID:      e.ActorID,
+			ActorLabel:   e.ActorLabel,
+			Method:       e.Method,
+			Path:         e.Path,
+			Query:        e.Query,
+			Status:       e.Status,
+			IP:           e.IP,
+			UserAgent:    e.UserAgent,
+			LatencyMs:    e.LatencyMs,
+			RequestBody:  e.RequestBody,
+			ResponseBody: e.ResponseBody,
 		})
 	}
 	audit := middleware.Audit(auditRecord)
@@ -298,8 +303,11 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// queued on RabbitMQ and delivered by the push worker.
 	pushPublisher := fcm.NewPublisher(d.MQ, func() bool { return d.Push.Enabled() })
 	notificationHandler := handler.NewNotificationHandler(pushPublisher)
-	// Audit logs — admin views the admin + student activity streams.
-	adminProtected.Get("/audit-logs", handler.NewAuditLogHandler(auditRepo).List)
+	// Audit logs — admin views the admin + student activity streams; the detail
+	// route returns one entry's full request/response payloads.
+	auditLogHandler := handler.NewAuditLogHandler(auditRepo)
+	adminProtected.Get("/audit-logs", auditLogHandler.List)
+	adminProtected.Get("/audit-logs/:id", auditLogHandler.Get)
 	adminProtected.Post("/notifications/send", notificationHandler.Send)
 	adminProtected.Post("/notifications/image", uploadHandler.UploadNotificationImage)
 

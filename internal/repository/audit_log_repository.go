@@ -59,6 +59,18 @@ func (r *AuditLogRepository) List(actorType string, from, to time.Time, limit, o
 		limit = 50
 	}
 	var out []model.AuditLog
-	err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&out).Error
+	// Omit the potentially large request/response payloads from the list — they're
+	// loaded on demand via FindByID (the detail view).
+	err := q.Omit("request_body", "response_body").
+		Order("created_at DESC").Limit(limit).Offset(offset).Find(&out).Error
 	return out, total, err
+}
+
+// FindByID returns one audit entry with its full request/response bodies.
+func (r *AuditLogRepository) FindByID(id uint) (*model.AuditLog, error) {
+	var a model.AuditLog
+	if err := r.db.First(&a, id).Error; err != nil {
+		return nil, err
+	}
+	return &a, nil
 }
