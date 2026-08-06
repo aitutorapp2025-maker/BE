@@ -12,6 +12,9 @@ type DeviceToken struct {
 	Platform  string    `gorm:"size:20" json:"platform"`    // android | ios | web
 	StudentID *uint     `gorm:"index" json:"student_id"`    // nil until mapped to a student
 	Phone     string    `gorm:"size:20;index" json:"phone"` // the mapped mobile number
+	// Enabled is the per-device "Notifications" switch (Profile & Settings). When
+	// off, this device is skipped when sending push. Defaults on.
+	Enabled   bool      `gorm:"not null;default:true" json:"enabled"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

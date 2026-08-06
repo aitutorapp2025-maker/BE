@@ -384,6 +384,12 @@ func (s *StudentAuthService) SaveDeviceToken(ctx context.Context, studentID uint
 	return s.devices.Map(token, "", studentID, phone)
 }
 
+// SetNotificationsEnabled turns push notifications on/off for all of the
+// student's devices (Profile & Settings → Notifications).
+func (s *StudentAuthService) SetNotificationsEnabled(ctx context.Context, studentID uint, enabled bool) error {
+	return s.devices.SetEnabledForStudent(studentID, enabled)
+}
+
 // gen6 returns a cryptographically-random 6-digit code (zero-padded).
 func gen6() string {
 	n, err := rand.Int(rand.Reader, big.NewInt(1000000))

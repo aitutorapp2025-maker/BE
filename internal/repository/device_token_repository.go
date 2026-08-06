@@ -48,16 +48,27 @@ func (r *DeviceTokenRepository) Map(token, platform string, studentID uint, phon
 func (r *DeviceTokenRepository) TokensForStudent(studentID uint) ([]string, error) {
 	var tokens []string
 	err := r.db.Model(&model.DeviceToken{}).
-		Where("student_id = ?", studentID).
+		Where("student_id = ? AND enabled = ?", studentID, true).
 		Pluck("token", &tokens).Error
 	return tokens, err
 }
 
-// AllTokens returns every registered device token (broadcast to all devices).
+// AllTokens returns every registered device token that has notifications on
+// (broadcast to all devices; devices that turned notifications off are skipped).
 func (r *DeviceTokenRepository) AllTokens() ([]string, error) {
 	var tokens []string
-	err := r.db.Model(&model.DeviceToken{}).Pluck("token", &tokens).Error
+	err := r.db.Model(&model.DeviceToken{}).
+		Where("enabled = ?", true).
+		Pluck("token", &tokens).Error
 	return tokens, err
+}
+
+// SetEnabledForStudent flips the notifications switch for every device the
+// student is signed in on (Profile & Settings → Notifications).
+func (r *DeviceTokenRepository) SetEnabledForStudent(studentID uint, enabled bool) error {
+	return r.db.Model(&model.DeviceToken{}).
+		Where("student_id = ?", studentID).
+		Update("enabled", enabled).Error
 }
 
 // DeleteTokens removes the given device tokens (used to prune tokens FCM
@@ -76,7 +87,7 @@ func (r *DeviceTokenRepository) TokensForStudents(ids []uint) ([]string, error) 
 	}
 	var tokens []string
 	err := r.db.Model(&model.DeviceToken{}).
-		Where("student_id IN ?", ids).
+		Where("student_id IN ? AND enabled = ?", ids, true).
 		Pluck("token", &tokens).Error
 	return tokens, err
 }

@@ -296,6 +296,10 @@ type deviceTokenRequest struct {
 	DeviceToken string `json:"device_token"`
 }
 
+type notificationsEnabledRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
 // SaveDeviceToken maps the FCM push token to the signed-in student + mobile.
 //
 // POST /api/v1/student/device-token  { "device_token": "..." }  (Bearer student JWT)
@@ -314,4 +318,23 @@ func (h *StudentAuthHandler) SaveDeviceToken(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "could not save the device token")
 	}
 	return c.JSON(fiber.Map{"success": true})
+}
+
+// SetNotifications turns push notifications on/off for the signed-in student's
+// devices (Profile & Settings → Notifications toggle).
+//
+// POST /api/v1/student/notifications/enabled  { "enabled": bool }  (signed student)
+func (h *StudentAuthHandler) SetNotifications(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	var req notificationsEnabledRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	if err := h.auth.SetNotificationsEnabled(c.Context(), studentID, req.Enabled); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "could not update notification settings")
+	}
+	return c.JSON(fiber.Map{"success": true, "enabled": req.Enabled})
 }

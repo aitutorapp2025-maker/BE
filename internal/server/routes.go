@@ -257,6 +257,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// starts fresh).
 	studentProtected.Delete("/account", studentAuthHandler.DeleteAccount)
 	studentProtected.Post("/device-token", studentAuthHandler.SaveDeviceToken)
+	// Notifications on/off (Profile & Settings toggle) for this student's devices.
+	studentProtected.Post("/notifications/enabled", studentAuthHandler.SetNotifications)
 	// Ask the AI tutor a textbook question (retrieval + Claude answer).
 	studentProtected.Post("/ask", tutorHandler.Ask)
 	// AI-tutor chat history — synced across devices (stored in Postgres).
