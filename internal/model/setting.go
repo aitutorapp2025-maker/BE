@@ -151,6 +151,10 @@ type Setting struct {
 	// (Help & Support) so Crashlytics can be verified — admin-toggleable.
 	CrashTestEnabled bool `gorm:"not null;default:false" json:"crash_test_enabled"`
 
+	// ChatSoundsEnabled plays a short sound in the mobile app when a chat
+	// message is sent and when the AI reply arrives — admin-toggleable.
+	ChatSoundsEnabled bool `gorm:"not null;default:true" json:"chat_sounds_enabled"`
+
 	// Computed (not stored): whether each secret is on file.
 	NexmoSecretSet       bool `gorm:"-" json:"nexmo_secret_set"`
 	SmsExpertPasswordSet bool `gorm:"-" json:"smsexpert_password_set"`

@@ -31,6 +31,7 @@ func (h *AuthConfigHandler) Get(c *fiber.Ctx) error {
 	appName := "Vaha AI"
 	logoURL, androidURL, iosURL, supportWhatsApp := "", "", "", ""
 	castOn, timedOn, referralOn, crashTestOn := false, false, false, false
+	chatSoundsOn := true // sounds on by default unless an admin turns them off
 	if s, err := h.settings.Get(); err == nil {
 		if s.AppName != "" {
 			appName = s.AppName
@@ -43,6 +44,7 @@ func (h *AuthConfigHandler) Get(c *fiber.Ctx) error {
 		timedOn = s.TimedTasksEnabled
 		referralOn = s.ReferralEnabled
 		crashTestOn = s.CrashTestEnabled
+		chatSoundsOn = s.ChatSoundsEnabled
 	}
 	return c.JSON(fiber.Map{
 		"success":             true,
@@ -55,6 +57,7 @@ func (h *AuthConfigHandler) Get(c *fiber.Ctx) error {
 		"timed_tasks_enabled": timedOn,
 		"referral_enabled":    referralOn,
 		"crash_test_enabled":  crashTestOn,
+		"chat_sounds_enabled": chatSoundsOn,
 		"google_sso_enabled":  googleOn,
 		"google_client_id":    clientID,
 	})

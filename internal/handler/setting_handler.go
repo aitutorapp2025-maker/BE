@@ -125,6 +125,7 @@ type settingRequest struct {
 	CrashlyticsDataset string `json:"crashlytics_dataset"`
 	CrashlyticsTable   string `json:"crashlytics_table"`
 	CrashTestEnabled   bool   `json:"crash_test_enabled"`
+	ChatSoundsEnabled  bool   `json:"chat_sounds_enabled"`
 }
 
 // Maintenance returns the public maintenance status for the customer apps.
@@ -369,6 +370,7 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.CrashlyticsDataset = strings.TrimSpace(req.CrashlyticsDataset)
 	s.CrashlyticsTable = strings.TrimSpace(req.CrashlyticsTable)
 	s.CrashTestEnabled = req.CrashTestEnabled
+	s.ChatSoundsEnabled = req.ChatSoundsEnabled
 
 	if err := h.settings.Save(s); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to save settings")
