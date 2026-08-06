@@ -147,6 +147,9 @@ type Setting struct {
 	AnalyticsDataset   string `gorm:"size:120" json:"analytics_dataset"`
 	CrashlyticsDataset string `gorm:"size:120" json:"crashlytics_dataset"`
 	CrashlyticsTable   string `gorm:"size:190" json:"crashlytics_table"`
+	// CrashTestEnabled shows the "Force test crash" button in the mobile app
+	// (Help & Support) so Crashlytics can be verified — admin-toggleable.
+	CrashTestEnabled bool `gorm:"not null;default:false" json:"crash_test_enabled"`
 
 	// Computed (not stored): whether each secret is on file.
 	NexmoSecretSet       bool `gorm:"-" json:"nexmo_secret_set"`
