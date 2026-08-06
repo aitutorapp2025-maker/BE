@@ -209,6 +209,25 @@ func registerRoutes(app *fiber.App, d Deps) {
 	student.Post("/verify-otp", enc, studentAuthHandler.VerifyOTP)
 	// Google (Gmail) SSO — verifies the Google ID token, opens a session.
 	student.Post("/google", enc, studentAuthHandler.GoogleLogin)
+	// Streaming (SSE) endpoints: words appear as the tutor generates them. Signed
+	// (JWT + nonce + HMAC) and end-to-end encrypted — the request body is
+	// decrypted by DecryptRequest and each SSE frame is an AES-GCM envelope (see
+	// sseStream). Not audited/Encrypt'd: an SSE response can't pass the buffering
+	// Audit/Encrypt middleware.
+	//
+	// Registered with PER-ROUTE middleware and BEFORE studentProtected — NOT via
+	// student.Group("", ...). An empty-prefix group registers a `Use` that leaks
+	// its middleware onto every /student route declared afterwards; that was
+	// double-applying SignedStudent (→ nonce replay on GETs, and a body-hash
+	// mismatch on POSTs once Encrypt had already decrypted the body) and wrongly
+	// wrapping the SSE routes in Encrypt.
+	sseSigned := middleware.SignedStudent(d.Cfg, sessStore)
+	sseDecrypt := middleware.DecryptRequest(sessStore)
+	student.Post("/ask/stream", sseSigned, sseDecrypt, tutorHandler.AskStream)
+	student.Post("/homework/:id/tasks/:taskId/teach/stream", sseSigned, sseDecrypt, homeworkHandler.TeachStream)
+	student.Post("/homework/:id/tasks/:taskId/doubt/stream", sseSigned, sseDecrypt, homeworkHandler.DoubtStream)
+	student.Post("/homework/:id/test/grade/stream", sseSigned, sseDecrypt, homeworkHandler.GradeTestStream)
+
 	// Signed-in student endpoints (profile + device token) — protected by the
 	// same strong scheme as admin: signed request (JWT + one-time nonce + HMAC
 	// signature) with end-to-end encrypted payloads.
@@ -232,17 +251,6 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Post("/device-token", studentAuthHandler.SaveDeviceToken)
 	// Ask the AI tutor a textbook question (retrieval + Claude answer).
 	studentProtected.Post("/ask", tutorHandler.Ask)
-	// Streaming (SSE) endpoints: words appear as the tutor generates them. Signed
-	// (JWT + nonce + HMAC) and end-to-end encrypted — the request body is
-	// decrypted by DecryptRequest and each SSE frame is an AES-GCM envelope (see
-	// sseStream). Not audited: an SSE response can't pass the buffering Audit mw.
-	studentStream := student.Group("",
-		middleware.SignedStudent(d.Cfg, sessStore),
-		middleware.DecryptRequest(sessStore))
-	studentStream.Post("/ask/stream", tutorHandler.AskStream)
-	studentStream.Post("/homework/:id/tasks/:taskId/teach/stream", homeworkHandler.TeachStream)
-	studentStream.Post("/homework/:id/tasks/:taskId/doubt/stream", homeworkHandler.DoubtStream)
-	studentStream.Post("/homework/:id/test/grade/stream", homeworkHandler.GradeTestStream)
 	// AI-tutor chat history — synced across devices (stored in Postgres).
 	studentProtected.Get("/chat", chatHistoryHandler.List)
 	studentProtected.Post("/chat/sync", chatHistoryHandler.Sync)

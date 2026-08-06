@@ -4,7 +4,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -64,18 +63,6 @@ func SignedStudent(cfg config.Config, store *session.Store) fiber.Handler {
 		mac.Write([]byte(signingString))
 		expected := hex.EncodeToString(mac.Sum(nil))
 		if !hmac.Equal([]byte(expected), []byte(sig)) {
-			// TEMP DIAGNOSTIC (remove after root-cause): does the received
-			// signature match a signature over an EMPTY body? If yes with a
-			// non-zero body length, the client signed over the wrong (empty)
-			// body while sending a real one.
-			eh := sha256.Sum256(nil)
-			emac := hmac.New(sha256.New, []byte(secret))
-			emac.Write([]byte(strings.Join([]string{
-				c.Method(), c.OriginalURL(), hex.EncodeToString(eh[:]), nonce, tsStr,
-			}, "\n")))
-			matchesEmpty := hmac.Equal([]byte(hex.EncodeToString(emac.Sum(nil))), []byte(sig))
-			log.Printf("SIGDBG bad-sig method=%s url=%s bodylen=%d encrypted=%s matchesEmptyBody=%v nonce=%s ts=%s",
-				c.Method(), c.OriginalURL(), len(c.Body()), c.Get("X-Encrypted"), matchesEmpty, nonce, tsStr)
 			return fiber.NewError(fiber.StatusUnauthorized, "bad request signature")
 		}
 
