@@ -152,11 +152,13 @@ func (s *PaymentService) CreateMandateIntent(studentID, planID uint) (*MandateIn
 		contact := normalizeContact(st.Phone)
 		custID, err := s.client.CreateCustomer(name, st.Email, contact)
 		if err != nil && strings.Contains(err.Error(), "already exists") && contact != "" {
-			// A customer with this phone already exists at Razorpay — usually a
-			// prior attempt whose id we didn't persist, possibly with a different
-			// name/email (contact is Razorpay's unique key, so fail_existing:0
-			// can't reconcile that). Fetch the existing one by contact alone.
-			custID, err = s.client.CreateCustomer("", "", contact)
+			// A customer with this phone already exists at Razorpay — an earlier
+			// attempt whose id we didn't persist. fail_existing:0 only returns it
+			// when the contact format matches exactly, which an orphaned record may
+			// not — so look it up by contact (matched on the last 10 digits).
+			if found, ferr := s.client.FetchCustomerByContact(contact); ferr == nil && found != "" {
+				custID, err = found, nil
+			}
 		}
 		if err != nil {
 			return nil, fmt.Errorf("create customer: %w", err)

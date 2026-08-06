@@ -195,6 +195,80 @@ func (c *Client) post(url string, body any, out any) error {
 	return nil
 }
 
+// get performs an authenticated GET and decodes the JSON response into out.
+func (c *Client) get(url string, out any) error {
+	cfg := c.cfg()
+	if !cfg.Enabled() {
+		return fmt.Errorf("razorpay is not configured (set the keys in admin Settings)")
+	}
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(cfg.KeyID, cfg.KeySecret)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("razorpay request: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("razorpay status %d: %s", resp.StatusCode, truncate(respBody, 300))
+	}
+	if out != nil {
+		if err := json.Unmarshal(respBody, out); err != nil {
+			return fmt.Errorf("razorpay decode: %w", err)
+		}
+	}
+	return nil
+}
+
+// FetchCustomerByContact finds an existing Razorpay customer whose contact
+// matches by its last 10 digits (so +91 / 0-prefix / raw formats all compare
+// equal). Returns "" when none is found. Used to recover the customer id when
+// creation reports "already exists" but our stored id was lost.
+func (c *Client) FetchCustomerByContact(contact string) (string, error) {
+	want := last10(contact)
+	if want == "" {
+		return "", nil
+	}
+	for skip := 0; skip < 1000; skip += 100 {
+		var out struct {
+			Items []struct {
+				ID      string `json:"id"`
+				Contact string `json:"contact"`
+			} `json:"items"`
+		}
+		if err := c.get(fmt.Sprintf("%s?count=100&skip=%d", customersURL, skip), &out); err != nil {
+			return "", err
+		}
+		for _, it := range out.Items {
+			if last10(it.Contact) == want {
+				return it.ID, nil
+			}
+		}
+		if len(out.Items) < 100 {
+			break // last page
+		}
+	}
+	return "", nil
+}
+
+// last10 returns the last 10 digits of s (India mobile), ignoring any +91/0
+// prefix or formatting. Returns "" if fewer than 10 digits.
+func last10(s string) string {
+	d := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] >= '0' && s[i] <= '9' {
+			d = append(d, s[i])
+		}
+	}
+	if len(d) < 10 {
+		return ""
+	}
+	return string(d[len(d)-10:])
+}
+
 // CreateCustomer creates (or returns the existing) Razorpay customer for a
 // UPI-AutoPay mandate. fail_existing=0 makes Razorpay return the existing
 // customer instead of erroring when the contact/email is already on file.
