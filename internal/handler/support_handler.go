@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/fcm"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/gofiber/fiber/v2"
@@ -15,11 +17,12 @@ import (
 type SupportHandler struct {
 	svc     *service.SupportService
 	tickets *repository.SupportRepository
+	push    *fcm.Publisher // notify the student when an admin responds
 }
 
 // NewSupportHandler builds a SupportHandler.
-func NewSupportHandler(svc *service.SupportService, tickets *repository.SupportRepository) *SupportHandler {
-	return &SupportHandler{svc: svc, tickets: tickets}
+func NewSupportHandler(svc *service.SupportService, tickets *repository.SupportRepository, push *fcm.Publisher) *SupportHandler {
+	return &SupportHandler{svc: svc, tickets: tickets, push: push}
 }
 
 type createTicketRequest struct {
@@ -105,5 +108,45 @@ func (h *SupportHandler) AdminReply(c *fiber.Ctx) error {
 	if err != nil {
 		return notFoundOrInternal(err, "ticket")
 	}
+	// Notify the student their report was answered/updated — enqueued to
+	// RabbitMQ so the admin request returns immediately and delivery (FCM push +
+	// in-app notification) happens in the background push worker. Best-effort.
+	h.notifyStudent(t, req.Reply)
 	return c.JSON(fiber.Map{"success": true, "ticket": t})
+}
+
+// notifyStudent enqueues a push telling the student about the admin response.
+// newReply is the reply text submitted in THIS update (empty = status-only),
+// so a status change doesn't re-announce an earlier reply.
+func (h *SupportHandler) notifyStudent(t *model.SupportTicket, newReply string) {
+	if h.push == nil || !h.push.Enabled() || t == nil || t.StudentID == 0 {
+		return
+	}
+	body := strings.TrimSpace(newReply)
+	if body == "" {
+		body = "Your report status is now " + statusLabel(t.Status) + "."
+	}
+	_ = h.push.Enqueue(fcm.PushJob{
+		Title:      "Support update",
+		Body:       trunc(body, 160),
+		StudentIDs: []uint{t.StudentID},
+	})
+}
+
+func statusLabel(s string) string {
+	switch s {
+	case "in_progress":
+		return "In progress"
+	case "resolved":
+		return "Resolved"
+	default:
+		return "Open"
+	}
+}
+
+func trunc(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return strings.TrimSpace(s[:n]) + "…"
 }

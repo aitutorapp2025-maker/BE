@@ -116,12 +116,15 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo, autopayEnabled, referralService)
 	tutorHandler := handler.NewTutorHandler(tutorService, studentRepo, creditService, autopayEnabled)
 	chatHistoryHandler := handler.NewChatHistoryHandler(repository.NewChatMessageRepository(d.DB))
+	// Background push publisher (RabbitMQ) — shared by the support handler (notify
+	// the student on an admin response) and the admin notification broadcast.
+	pushPublisher := fcm.NewPublisher(d.MQ, func() bool { return d.Push.Enabled() })
 	// "Report a problem" support tickets (student files/tracks; admin responds).
 	supportRepo := repository.NewSupportRepository(d.DB)
 	supportHandler := handler.NewSupportHandler(
 		service.NewSupportService(supportRepo, d.Cfg.Uploads.PrivateDir,
 			d.Cfg.Uploads.PublicBaseURL, d.Cfg.JWT.Secret),
-		supportRepo)
+		supportRepo, pushPublisher)
 	creditHandler := handler.NewCreditHandler(creditService, studentRepo)
 	reportHandler := handler.NewReportHandler(studentRepo, creditRepo)
 
@@ -342,8 +345,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	crons.Post("/:key/run", cronHandler.Run)
 
 	// Push notifications — admin broadcast to all customers or selected students,
-	// queued on RabbitMQ and delivered by the push worker.
-	pushPublisher := fcm.NewPublisher(d.MQ, func() bool { return d.Push.Enabled() })
+	// queued on RabbitMQ and delivered by the push worker (pushPublisher built above).
 	notificationHandler := handler.NewNotificationHandler(pushPublisher)
 	// Audit logs — admin views the admin + student activity streams; the detail
 	// route returns one entry's full request/response payloads.
