@@ -116,6 +116,14 @@ type settingRequest struct {
 	ReferralRewardRupees int    `json:"referral_reward_rupees"`
 	ReferralShareMessage string `json:"referral_share_message"`
 	ReferralLinkBase     string `json:"referral_link_base"`
+
+	// Firebase Analytics + Crashlytics dashboards (BigQuery export).
+	AnalyticsEnabled   bool   `json:"analytics_enabled"`
+	CrashlyticsEnabled bool   `json:"crashlytics_enabled"`
+	BigQueryProjectID  string `json:"bigquery_project_id"`
+	AnalyticsDataset   string `json:"analytics_dataset"`
+	CrashlyticsDataset string `json:"crashlytics_dataset"`
+	CrashlyticsTable   string `json:"crashlytics_table"`
 }
 
 // Maintenance returns the public maintenance status for the customer apps.
@@ -351,6 +359,14 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	}
 	s.ReferralShareMessage = strings.TrimSpace(req.ReferralShareMessage)
 	s.ReferralLinkBase = strings.TrimSpace(req.ReferralLinkBase)
+
+	// Firebase Analytics + Crashlytics (BigQuery export).
+	s.AnalyticsEnabled = req.AnalyticsEnabled
+	s.CrashlyticsEnabled = req.CrashlyticsEnabled
+	s.BigQueryProjectID = strings.TrimSpace(req.BigQueryProjectID)
+	s.AnalyticsDataset = strings.TrimSpace(req.AnalyticsDataset)
+	s.CrashlyticsDataset = strings.TrimSpace(req.CrashlyticsDataset)
+	s.CrashlyticsTable = strings.TrimSpace(req.CrashlyticsTable)
 
 	if err := h.settings.Save(s); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to save settings")

@@ -134,6 +134,20 @@ type Setting struct {
 	ReferralShareMessage string `gorm:"size:600" json:"referral_share_message"`
 	ReferralLinkBase     string `gorm:"size:200" json:"referral_link_base"`
 
+	// Firebase analytics + Crashlytics dashboards. Both read from the Firebase
+	// BigQuery export via a daily sync (reusing the FCM service-account JSON to
+	// authenticate to BigQuery). Each menu can be switched on/off independently.
+	//   - BigQueryProjectID: the Google Cloud project that holds the export.
+	//   - AnalyticsDataset: the GA4 export dataset, e.g. "analytics_123456789".
+	//   - CrashlyticsDataset: usually "firebase_crashlytics".
+	//   - CrashlyticsTable: the app's crash table, e.g. "com_example_app_ANDROID".
+	AnalyticsEnabled   bool   `gorm:"not null;default:false" json:"analytics_enabled"`
+	CrashlyticsEnabled bool   `gorm:"not null;default:false" json:"crashlytics_enabled"`
+	BigQueryProjectID  string `gorm:"size:120" json:"bigquery_project_id"`
+	AnalyticsDataset   string `gorm:"size:120" json:"analytics_dataset"`
+	CrashlyticsDataset string `gorm:"size:120" json:"crashlytics_dataset"`
+	CrashlyticsTable   string `gorm:"size:190" json:"crashlytics_table"`
+
 	// Computed (not stored): whether each secret is on file.
 	NexmoSecretSet       bool `gorm:"-" json:"nexmo_secret_set"`
 	SmsExpertPasswordSet bool `gorm:"-" json:"smsexpert_password_set"`

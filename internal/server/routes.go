@@ -386,6 +386,15 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Settings (singleton).
 	adminProtected.Get("/settings", settingHandler.Get)
 	adminProtected.Put("/settings", settingHandler.Update)
+
+	// Firebase Analytics + Crashlytics dashboards (synced daily from BigQuery).
+	fbStatsRepo := repository.NewFirebaseStatsRepository(d.DB)
+	fbStatsHandler := handler.NewFirebaseStatsHandler(
+		fbStatsRepo, settingRepo,
+		service.NewFirebaseStatsService(settingRepo, fbStatsRepo))
+	adminProtected.Get("/analytics", fbStatsHandler.Analytics)
+	adminProtected.Get("/crashlytics", fbStatsHandler.Crashlytics)
+	adminProtected.Post("/firebase-stats/sync", fbStatsHandler.Sync)
 	adminProtected.Post("/settings/logo", uploadHandler.UploadLogo)
 	adminProtected.Post("/settings/test-email", settingHandler.TestEmail)
 	adminProtected.Post("/settings/test-sms", settingHandler.TestSMS)

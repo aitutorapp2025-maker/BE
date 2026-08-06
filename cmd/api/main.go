@@ -263,6 +263,10 @@ func main() {
 		{scheduler.ReferralPromoJob(settingRepo, pushPublisher),
 			"Referral promo push",
 			"Every 3 days, sends all customers an FCM push promoting refer & earn (only when the referral program is on)."},
+		{scheduler.SyncFirebaseStatsJob(
+			service.NewFirebaseStatsService(settingRepo, repository.NewFirebaseStatsRepository(db))),
+			"Sync Firebase analytics + crashlytics",
+			"Once a day, pulls the Firebase Analytics + Crashlytics BigQuery export into our dashboards (only when enabled + configured)."},
 	}
 	for _, r := range registrations {
 		if err := cronRepo.Ensure(model.CronJob{

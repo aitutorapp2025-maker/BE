@@ -48,6 +48,8 @@ func Migrate(db *gorm.DB) error {
 		&model.Referral{},
 		&model.Notification{},
 		&model.ChatMessage{},
+		&model.AnalyticsDaily{},
+		&model.CrashDaily{},
 	)
 }
 

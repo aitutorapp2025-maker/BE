@@ -140,6 +140,20 @@ func ReferralPromoJob(settings *repository.SettingRepository, push *fcm.Publishe
 	}
 }
 
+// SyncFirebaseStatsJob pulls the Firebase Analytics + Crashlytics BigQuery
+// exports into our daily-aggregate tables once per day, so the admin dashboards
+// read from our own DB. It syncs the last few days (to fill the export's landing
+// delay + any gaps) and no-ops when both features are switched off / unconfigured.
+func SyncFirebaseStatsJob(stats *service.FirebaseStatsService) Job {
+	return Job{
+		Key:      "sync_firebase_stats",
+		Schedule: "daily",
+		Run: func(now time.Time) (string, error) {
+			return stats.Sync(context.Background(), 3)
+		},
+	}
+}
+
 // daysUntil is the calendar-day difference (t's date − now's date), so a trial
 // ending later today is 0, tomorrow is 1, etc.
 func daysUntil(t, now time.Time) int {
