@@ -139,12 +139,20 @@ func (h *PlanHandler) Update(c *fiber.Ctx) error {
 	// Razorpay plans are immutable, so (re)create one whenever the price or
 	// billing period changes, or when a paid tier has no id yet.
 	var warning string
+	priceChanged := p.PriceRupees != oldPrice || p.DurationDays != oldDuration
 	needsSync := !p.IsTrial && p.PriceRupees > 0 &&
-		(p.PriceRupees != oldPrice || p.DurationDays != oldDuration || p.RazorpayPlanID == "")
+		(priceChanged || p.RazorpayPlanID == "")
 	if needsSync {
 		if err := h.syncRazorpayPlan(p); err != nil {
-			if p.RazorpayPlanID == "" {
-				p.RazorpayPlanID = oldRZP // keep the previous link on failure
+			// Razorpay plans are immutable. If the price/period changed we must NOT
+			// keep the old plan id — it would keep charging the previous amount
+			// (the "changed ₹5→₹2 but checkout shows ₹5" bug). Clear it so AutoPay
+			// fails cleanly ("plan not linked") until a valid plan is created; the
+			// next save retries the sync automatically.
+			if priceChanged {
+				p.RazorpayPlanID = ""
+			} else if p.RazorpayPlanID == "" {
+				p.RazorpayPlanID = oldRZP // unchanged price: keep the previous link
 			}
 			warning = razorpayWarn(err)
 		}
