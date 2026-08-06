@@ -50,6 +50,7 @@ func Migrate(db *gorm.DB) error {
 		&model.ChatMessage{},
 		&model.AnalyticsDaily{},
 		&model.CrashDaily{},
+		&model.SupportTicket{},
 	)
 }
 

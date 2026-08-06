@@ -36,3 +36,16 @@ func (h *MediaHandler) Homework(c *fiber.Ctx) error {
 	// SendFile 404s cleanly if the file is missing.
 	return c.SendFile(path, true)
 }
+
+// Support serves a support-ticket attachment if the signature matches.
+// GET /api/v1/media/support/:file?sig=...
+func (h *MediaHandler) Support(c *fiber.Ctx) error {
+	file := c.Params("file")
+	if file == "" || strings.ContainsAny(file, "/\\") || strings.Contains(file, "..") {
+		return fiber.NewError(fiber.StatusBadRequest, "bad file")
+	}
+	if !media.Verify(file, c.Query("sig"), h.secret) {
+		return fiber.NewError(fiber.StatusForbidden, "invalid signature")
+	}
+	return c.SendFile(filepath.Join(h.privateDir, "support", file), true)
+}

@@ -116,6 +116,12 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo, autopayEnabled, referralService)
 	tutorHandler := handler.NewTutorHandler(tutorService, studentRepo, creditService, autopayEnabled)
 	chatHistoryHandler := handler.NewChatHistoryHandler(repository.NewChatMessageRepository(d.DB))
+	// "Report a problem" support tickets (student files/tracks; admin responds).
+	supportRepo := repository.NewSupportRepository(d.DB)
+	supportHandler := handler.NewSupportHandler(
+		service.NewSupportService(supportRepo, d.Cfg.Uploads.PrivateDir,
+			d.Cfg.Uploads.PublicBaseURL, d.Cfg.JWT.Secret),
+		supportRepo)
 	creditHandler := handler.NewCreditHandler(creditService, studentRepo)
 	reportHandler := handler.NewReportHandler(studentRepo, creditRepo)
 
@@ -196,9 +202,11 @@ func registerRoutes(app *fiber.App, d Deps) {
 	v1.Get("/auth-config", enc, handler.NewAuthConfigHandler(googleProvider, settingRepo).Get)
 	// Mobile app version / force-update check.
 	v1.Get("/app-version", enc, settingHandler.AppVersion)
-	// Signed access to private homework images (not on the public /uploads mount).
-	v1.Get("/media/hw/:file",
-		handler.NewMediaHandler(d.Cfg.Uploads.PrivateDir, d.Cfg.JWT.Secret).Homework)
+	// Signed access to private homework images + support attachments (not on the
+	// public /uploads mount).
+	mediaHandler := handler.NewMediaHandler(d.Cfg.Uploads.PrivateDir, d.Cfg.JWT.Secret)
+	v1.Get("/media/hw/:file", mediaHandler.Homework)
+	v1.Get("/media/support/:file", mediaHandler.Support)
 
 	// Student (mobile) passwordless login — OTP over SMS. Encrypted end-to-end
 	// like the other public endpoints (phone number + code stay opaque).
@@ -254,6 +262,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// AI-tutor chat history — synced across devices (stored in Postgres).
 	studentProtected.Get("/chat", chatHistoryHandler.List)
 	studentProtected.Post("/chat/sync", chatHistoryHandler.Sync)
+	// Report a problem: file a ticket (+ optional attachment) and track it.
+	studentProtected.Post("/support", supportHandler.Create)
+	studentProtected.Get("/support", supportHandler.ListMine)
 	// Homework: upload a photo → AI reads it and splits it into tasks.
 	studentProtected.Post("/homework", homeworkHandler.Upload)
 	studentProtected.Get("/homework", homeworkHandler.List)
@@ -402,6 +413,10 @@ func registerRoutes(app *fiber.App, d Deps) {
 	adminProtected.Get("/analytics", fbStatsHandler.Analytics)
 	adminProtected.Get("/crashlytics", fbStatsHandler.Crashlytics)
 	adminProtected.Post("/firebase-stats/sync", fbStatsHandler.Sync)
+
+	// "Report a problem" support tickets — list + respond.
+	adminProtected.Get("/support", supportHandler.AdminList)
+	adminProtected.Put("/support/:id", supportHandler.AdminReply)
 	adminProtected.Post("/settings/logo", uploadHandler.UploadLogo)
 	adminProtected.Post("/settings/test-email", settingHandler.TestEmail)
 	adminProtected.Post("/settings/test-sms", settingHandler.TestSMS)
