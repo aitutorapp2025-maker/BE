@@ -48,12 +48,16 @@ func Audit(record func(AuditEntry)) fiber.Handler {
 			return err
 		}
 
+		// NOTE: c.Method()/c.Path()/c.IP()/c.Get() return zero-copy strings that
+		// alias Fiber's pooled request buffer — reused for the next request. The
+		// recorder persists ASYNChronously, so these MUST be cloned or the stored
+		// path/method get corrupted (truncated/crossed) once the ctx is recycled.
 		e := AuditEntry{
-			Method:    c.Method(),
-			Path:      c.Path(),
+			Method:    strings.Clone(c.Method()),
+			Path:      strings.Clone(c.Path()),
 			Query:     trunc(string(c.Request().URI().QueryString()), 400),
-			IP:        c.IP(),
-			UserAgent: trunc(c.Get(fiber.HeaderUserAgent), 300),
+			IP:        strings.Clone(c.IP()),
+			UserAgent: strings.Clone(trunc(c.Get(fiber.HeaderUserAgent), 300)),
 			LatencyMs: time.Since(start).Milliseconds(),
 			Status:    c.Response().StatusCode(),
 		}
