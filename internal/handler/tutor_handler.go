@@ -55,10 +55,18 @@ func (h *TutorHandler) Ask(c *fiber.Ctx) error {
 	// is on trial but hasn't enabled (or has deleted) their UPI-AutoPay mandate,
 	// they can't use the trial — prompt them to enable it. Paid students are
 	// unaffected; if the admin disabled autopay, trials work without a mandate.
-	if h.autopay() && st.PayStatus == "trial" && !st.AutopayActive {
+	// Block the AI tutor when AutoPay is required but off: a trial that never
+	// enabled it, or a student who DELETED their mandate (paid → expired on the
+	// cancellation webhook). Prompt them to (re-)enable AutoPay to continue.
+	if h.autopay() && !st.AutopayActive &&
+		(st.PayStatus == "trial" || st.PayStatus == "expired") {
+		msg := "Enable AutoPay to start your free trial."
+		if st.PayStatus == "expired" {
+			msg = "AutoPay is turned off. Please enable AutoPay to keep using the AI tutor."
+		}
 		return c.Status(fiber.StatusPaymentRequired).JSON(fiber.Map{
 			"success":       false,
-			"error":         "Enable autopay to start your free trial.",
+			"error":         msg,
 			"needs_autopay": true,
 		})
 	}
@@ -136,10 +144,18 @@ func (h *TutorHandler) AskStream(c *fiber.Ctx) error {
 	}
 
 	// Same gates as Ask — resolved before any streaming so they can 402/JSON.
-	if h.autopay() && st.PayStatus == "trial" && !st.AutopayActive {
+	// Block the AI tutor when AutoPay is required but off: a trial that never
+	// enabled it, or a student who DELETED their mandate (paid → expired on the
+	// cancellation webhook). Prompt them to (re-)enable AutoPay to continue.
+	if h.autopay() && !st.AutopayActive &&
+		(st.PayStatus == "trial" || st.PayStatus == "expired") {
+		msg := "Enable AutoPay to start your free trial."
+		if st.PayStatus == "expired" {
+			msg = "AutoPay is turned off. Please enable AutoPay to keep using the AI tutor."
+		}
 		return c.Status(fiber.StatusPaymentRequired).JSON(fiber.Map{
 			"success":       false,
-			"error":         "Enable autopay to start your free trial.",
+			"error":         msg,
 			"needs_autopay": true,
 		})
 	}
