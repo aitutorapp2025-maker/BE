@@ -332,6 +332,9 @@ func (s *PaymentService) HandleWebhook(body []byte, signature string) (bool, err
 		if err != nil {
 			return true, fmt.Errorf("no plan for %s: %w", wh.Payload.Subscription.Entity.PlanID, err)
 		}
+		// Monthly renewal: unused credits don't carry over — expire the old
+		// balance to 0, then grant this cycle's fresh credits.
+		_, _ = s.credits.ExpireCredits(st.ID, "Monthly reset")
 		if _, err := s.credits.Grant(int(st.ID), plan.Credits, amount, "subscription",
 			"Razorpay "+payID); err != nil {
 			return true, fmt.Errorf("grant credits: %w", err)
@@ -346,8 +349,23 @@ func (s *PaymentService) HandleWebhook(body []byte, signature string) (bool, err
 		// The mandate is set up (UPI AutoPay enabled) — the trial is now usable
 		// and the base plan will auto-debit at start_at.
 		if st, err := s.students.FindBySubscriptionID(subID); err == nil {
+			wasActive := st.AutopayActive
 			st.AutopayActive = true
 			_ = s.students.Update(st)
+			// Record the ₹1 AutoPay setup in Billing (once, on first activation).
+			if !wasActive {
+				_, _ = s.credits.Grant(int(st.ID), 0, 100, "autopay_setup",
+					"AutoPay setup (₹1)")
+			}
+		}
+		return true, nil
+
+	case "subscription.pending":
+		// A scheduled auto-debit failed (Razorpay will retry) — record it so the
+		// student sees the failed charge in Billing.
+		if st, err := s.students.FindBySubscriptionID(subID); err == nil {
+			_, _ = s.credits.Grant(int(st.ID), 0, 0, "autopay_failed",
+				"AutoPay charge failed")
 		}
 		return true, nil
 
@@ -432,6 +450,8 @@ func (s *PaymentService) handleMandatePayment(wh webhookPayload) (bool, error) {
 	if err != nil {
 		return true, fmt.Errorf("no plan %d: %w", planID, err)
 	}
+	// Monthly renewal: expire any unused credits before granting this cycle's.
+	_, _ = s.credits.ExpireCredits(st.ID, "Monthly reset")
 	if _, err := s.credits.Grant(int(st.ID), plan.Credits, pay.Amount, "subscription", "Razorpay "+pay.ID); err != nil {
 		return true, fmt.Errorf("grant credits: %w", err)
 	}

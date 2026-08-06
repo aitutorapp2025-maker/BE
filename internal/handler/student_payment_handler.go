@@ -30,11 +30,16 @@ func (h *StudentPaymentHandler) List(c *fiber.Ctx) error {
 	}
 	out := make([]fiber.Map, 0, len(rows))
 	for _, r := range rows {
+		status := "success"
+		if r.Kind == "autopay_failed" {
+			status = "failed"
+		}
 		out = append(out, fiber.Map{
 			"id":            r.ID,
 			"amount_rupees": r.RevenuePaise / 100,
 			"credits":       r.Credits,
-			"kind":          r.Kind, // grant | recharge
+			"kind":          r.Kind, // grant | recharge | subscription | autopay_setup | autopay_failed
+			"status":        status, // success | failed
 			"note":          r.Note,
 			"created_at":    r.CreatedAt,
 		})

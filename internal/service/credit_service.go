@@ -94,6 +94,12 @@ func (s *CreditService) Grant(studentID, credits int, revenuePaise int64, kind, 
 	return s.repo.Grant(uint(studentID), credits, revenuePaise, kind, note)
 }
 
+// ExpireCredits zeroes a student's balance (unused credits don't carry over at
+// a monthly renewal), recording the drop as a debit. Returns credits expired.
+func (s *CreditService) ExpireCredits(studentID uint, note string) (int, error) {
+	return s.repo.ExpireCredits(studentID, note)
+}
+
 // Balance returns the student's current credit balance.
 func (s *CreditService) Balance(studentID uint) (int, error) {
 	return s.repo.Balance(studentID)

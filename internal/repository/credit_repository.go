@@ -148,11 +148,42 @@ func (r *CreditRepository) PaymentsForStudent(studentID uint, limit int) ([]mode
 	}
 	var rows []model.CreditLedger
 	err := r.db.
-		Where("student_id = ? AND revenue_paise > 0", studentID).
+		// Money-in rows (plan grants + recharges) plus AutoPay lifecycle rows
+		// (₹1 setup + failed charges) so the Billing screen shows them all.
+		Where("student_id = ? AND (revenue_paise > 0 OR kind IN ?)",
+			studentID, []string{"autopay_setup", "autopay_failed"}).
 		Order("created_at DESC").
 		Limit(limit).
 		Find(&rows).Error
 	return rows, err
+}
+
+// ExpireCredits zeroes a student's AI-credit balance, recording the drop as a
+// debit so the ledger stays consistent. Called at each monthly renewal so
+// unused credits don't carry over. Returns how many credits were expired.
+func (r *CreditRepository) ExpireCredits(studentID uint, note string) (int, error) {
+	var expired int
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var st model.Student
+		if err := tx.Select("credits").First(&st, studentID).Error; err != nil {
+			return err
+		}
+		if st.Credits <= 0 {
+			return nil
+		}
+		expired = st.Credits
+		if err := tx.Model(&model.Student{}).Where("id = ?", studentID).
+			UpdateColumn("credits", 0).Error; err != nil {
+			return err
+		}
+		return tx.Create(&model.CreditLedger{
+			StudentID: studentID,
+			Kind:      "expire",
+			Credits:   -expired,
+			Note:      note,
+		}).Error
+	})
+	return expired, err
 }
 
 // SummaryRange is Summary restricted to an optional date range [from, to).
