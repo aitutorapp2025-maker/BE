@@ -228,6 +228,13 @@ func main() {
 		log.Errorf("push worker: %v", err)
 	}
 
+	// Firebase Analytics + Crashlytics BigQuery sync — shared by the daily cron
+	// and the on-demand "Sync now" worker (so the admin click never blocks).
+	firebaseStats := service.NewFirebaseStatsService(settingRepo, repository.NewFirebaseStatsRepository(db))
+	if err := worker.StartFirebaseSyncWorker(mq, firebaseStats, log); err != nil {
+		log.Errorf("firebase sync worker: %v", err)
+	}
+
 	// PaymentService is built here (not just in routes) so the recurring-charge
 	// scheduler job and the HTTP handlers share one instance.
 	razorpayProvider := service.RazorpayProvider(settingRepo, cfg.Razorpay)
@@ -263,8 +270,7 @@ func main() {
 		{scheduler.ReferralPromoJob(settingRepo, pushPublisher),
 			"Referral promo push",
 			"Every 3 days, sends all customers an FCM push promoting refer & earn (only when the referral program is on)."},
-		{scheduler.SyncFirebaseStatsJob(
-			service.NewFirebaseStatsService(settingRepo, repository.NewFirebaseStatsRepository(db))),
+		{scheduler.SyncFirebaseStatsJob(firebaseStats),
 			"Sync Firebase analytics + crashlytics",
 			"Once a day, pulls the Firebase Analytics + Crashlytics BigQuery export into our dashboards (only when enabled + configured)."},
 	}

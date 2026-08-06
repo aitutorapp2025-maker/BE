@@ -387,11 +387,10 @@ func registerRoutes(app *fiber.App, d Deps) {
 	adminProtected.Get("/settings", settingHandler.Get)
 	adminProtected.Put("/settings", settingHandler.Update)
 
-	// Firebase Analytics + Crashlytics dashboards (synced daily from BigQuery).
+	// Firebase Analytics + Crashlytics dashboards (synced daily from BigQuery;
+	// "Sync now" is queued on RabbitMQ and run by the firebase-sync worker).
 	fbStatsRepo := repository.NewFirebaseStatsRepository(d.DB)
-	fbStatsHandler := handler.NewFirebaseStatsHandler(
-		fbStatsRepo, settingRepo,
-		service.NewFirebaseStatsService(settingRepo, fbStatsRepo))
+	fbStatsHandler := handler.NewFirebaseStatsHandler(fbStatsRepo, settingRepo, d.MQ)
 	adminProtected.Get("/analytics", fbStatsHandler.Analytics)
 	adminProtected.Get("/crashlytics", fbStatsHandler.Crashlytics)
 	adminProtected.Post("/firebase-stats/sync", fbStatsHandler.Sync)

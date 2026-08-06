@@ -13,6 +13,16 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 )
 
+// QueueFirebaseSync is the RabbitMQ queue for background BigQuery-sync jobs, so
+// the admin "Sync now" click returns immediately and the (potentially slow)
+// BigQuery queries run in a worker.
+const QueueFirebaseSync = "firebase.stats.sync"
+
+// SyncJob asks the worker to sync the last Days days.
+type SyncJob struct {
+	Days int `json:"days"`
+}
+
 // FirebaseStatsService syncs the Firebase Analytics + Crashlytics BigQuery
 // exports into our own daily-aggregate tables (so the admin dashboards read from
 // our DB). It authenticates to BigQuery with the FCM service-account JSON.

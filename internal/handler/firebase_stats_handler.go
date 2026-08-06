@@ -1,29 +1,30 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/queue"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/gofiber/fiber/v2"
 )
 
 // FirebaseStatsHandler serves the admin Analytics + Crashlytics dashboards from
-// our stored daily aggregates, and can trigger an on-demand sync.
+// our stored daily aggregates, and can trigger an on-demand sync (queued on
+// RabbitMQ so the request returns immediately).
 type FirebaseStatsHandler struct {
 	stats    *repository.FirebaseStatsRepository
 	settings *repository.SettingRepository
-	sync     *service.FirebaseStatsService
+	mq       *queue.RabbitMQ
 }
 
 // NewFirebaseStatsHandler builds a FirebaseStatsHandler.
-func NewFirebaseStatsHandler(stats *repository.FirebaseStatsRepository, settings *repository.SettingRepository, sync *service.FirebaseStatsService) *FirebaseStatsHandler {
-	return &FirebaseStatsHandler{stats: stats, settings: settings, sync: sync}
+func NewFirebaseStatsHandler(stats *repository.FirebaseStatsRepository, settings *repository.SettingRepository, mq *queue.RabbitMQ) *FirebaseStatsHandler {
+	return &FirebaseStatsHandler{stats: stats, settings: settings, mq: mq}
 }
 
 func (h *FirebaseStatsHandler) days(c *fiber.Ctx) int {
@@ -134,13 +135,21 @@ func (h *FirebaseStatsHandler) Crashlytics(c *fiber.Ctx) error {
 	})
 }
 
-// Sync runs an on-demand BigQuery sync (last 7 days). POST /admin/firebase-stats/sync
+// Sync queues an on-demand BigQuery sync (last 7 days) on RabbitMQ and returns
+// immediately — a worker runs the (possibly slow) queries in the background.
+// POST /admin/firebase-stats/sync
 func (h *FirebaseStatsHandler) Sync(c *fiber.Ctx) error {
-	msg, err := h.sync.Sync(context.Background(), 7)
-	if err != nil {
-		return fiber.NewError(fiber.StatusBadGateway, "sync failed: "+err.Error())
+	if h.mq == nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "background queue unavailable")
 	}
-	return c.JSON(fiber.Map{"success": true, "message": msg})
+	body, _ := json.Marshal(service.SyncJob{Days: 7})
+	if err := h.mq.Publish(service.QueueFirebaseSync, body); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "could not queue the sync")
+	}
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{
+		"success": true,
+		"message": "Sync queued — the dashboard will update in a minute or two.",
+	})
 }
 
 func analyticsConfigured(s *model.Setting) bool {
