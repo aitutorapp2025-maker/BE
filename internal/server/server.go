@@ -44,6 +44,11 @@ func New(d Deps) *fiber.App {
 		AppName:               d.Cfg.AppName,
 		DisableStartupMessage: true,
 		ErrorHandler:          errorHandler(d.Alerter, d.Log),
+		// Support/homework attachments travel as base64 inside the E2E-encrypted
+		// body, which roughly doubles their size on the wire — a 12 MB file
+		// becomes ~21 MB. Fiber's default 4 MB limit rejected them before the
+		// handler ran ("unable to upload"). 32 MB comfortably covers the max.
+		BodyLimit: 32 * 1024 * 1024,
 	})
 
 	// recover turns panics into errors routed to the ErrorHandler above.
