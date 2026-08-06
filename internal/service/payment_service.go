@@ -97,11 +97,14 @@ func (s *PaymentService) CreateSubscription(studentID, planID uint) (*SubscribeR
 	if strings.TrimSpace(plan.RazorpayPlanID) == "" {
 		return nil, fmt.Errorf("this plan isn't linked to Razorpay yet")
 	}
-	// Schedule the first charge for the trial's end so the mandate is authorized
-	// now (₹1 UPI-AutoPay confirmation) and the base plan only auto-debits after
-	// the trial. If the trial has passed (or isn't set), charge immediately.
-	var startAt int64
-	if st.TrialEndsAt != nil && st.TrialEndsAt.After(time.Now()) {
+	// Setup must only CONFIRM the mandate (a small UPI-AutoPay ₹1-style
+	// confirmation) and register it for the plan amount — it must NEVER charge
+	// the full plan amount up front. So the first real plan debit is always
+	// deferred to a future start_at: the trial's end, or (if the trial has
+	// already passed) the next day. The plan amount then auto-debits from there.
+	now := time.Now()
+	startAt := now.Add(24 * time.Hour).Unix()
+	if st.TrialEndsAt != nil && st.TrialEndsAt.After(now) {
 		startAt = st.TrialEndsAt.Unix()
 	}
 	// Authorize 12 cycles by default; the mandate can be renewed later.
