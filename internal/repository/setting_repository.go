@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/cache"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
@@ -49,6 +50,21 @@ func (r *SettingRepository) Get() (*model.Setting, error) {
 func (r *SettingRepository) Save(s *model.Setting) error {
 	s.ID = 1
 	if err := r.db.Save(s).Error; err != nil {
+		return err
+	}
+	r.cache.Del(context.Background(), cache.KeySettings)
+	return nil
+}
+
+// SetSyncStatus records the outcome of the last BigQuery sync (targeted update
+// so it never clobbers other settings), then busts the settings cache.
+func (r *SettingRepository) SetSyncStatus(msg string) error {
+	now := time.Now()
+	if err := r.db.Model(&model.Setting{}).Where("id = ?", 1).
+		Updates(map[string]any{
+			"firebase_sync_status": msg,
+			"firebase_sync_at":     now,
+		}).Error; err != nil {
 		return err
 	}
 	r.cache.Del(context.Background(), cache.KeySettings)

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -72,29 +73,64 @@ func (s *FirebaseStatsService) Sync(ctx context.Context, days int) (string, erro
 	}
 	now := time.Now().UTC()
 	aDone, cDone := 0, 0
+	aMissing, cMissing := false, false
 	var firstErr error
 	for i := 1; i <= days; i++ {
 		d := now.AddDate(0, 0, -i)
 		if set.AnalyticsEnabled && strings.TrimSpace(set.AnalyticsDataset) != "" {
-			if err := s.syncAnalyticsDay(ctx, bq, set, d); err != nil {
+			switch err := s.syncAnalyticsDay(ctx, bq, set, d); {
+			case err == nil:
+				aDone++
+			case errors.Is(err, errMissingTable):
+				aMissing = true
+			default:
 				if firstErr == nil {
 					firstErr = err
 				}
-			} else {
-				aDone++
 			}
 		}
 		if set.CrashlyticsEnabled && strings.TrimSpace(set.CrashlyticsTable) != "" {
-			if err := s.syncCrashDay(ctx, bq, set, d); err != nil {
+			switch err := s.syncCrashDay(ctx, bq, set, d); {
+			case err == nil:
+				cDone++
+			case errors.Is(err, errMissingTable):
+				cMissing = true
+			default:
 				if firstErr == nil {
 					firstErr = err
 				}
-			} else {
-				cDone++
 			}
 		}
 	}
-	return fmt.Sprintf("synced analytics=%d, crashlytics=%d day(s)", aDone, cDone), firstErr
+	// Build a diagnostic summary so a 0 result explains itself.
+	var parts []string
+	if set.AnalyticsEnabled {
+		switch {
+		case strings.TrimSpace(set.AnalyticsDataset) == "":
+			parts = append(parts, "analytics: dataset not set in Settings")
+		case aMissing && aDone == 0:
+			parts = append(parts, "analytics: no export table in BigQuery yet (link GA4 → BigQuery, then wait for the daily export)")
+		default:
+			parts = append(parts, fmt.Sprintf("analytics=%d day(s)", aDone))
+		}
+	}
+	if set.CrashlyticsEnabled {
+		switch {
+		case strings.TrimSpace(set.CrashlyticsTable) == "":
+			parts = append(parts, "crashlytics: table name not set in Settings")
+		case cMissing && cDone == 0:
+			parts = append(parts, "crashlytics: export table not found in BigQuery — enable Crashlytics → BigQuery export (Blaze plan) and wait for the daily export")
+		default:
+			parts = append(parts, fmt.Sprintf("crashlytics=%d day(s)", cDone))
+		}
+	}
+	summary := "synced — " + strings.Join(parts, "; ")
+	if firstErr != nil {
+		summary += " — error: " + firstErr.Error()
+	}
+	// Persist so the admin dashboard can show why a sync produced 0.
+	_ = s.settings.SetSyncStatus(summary)
+	return summary, firstErr
 }
 
 func (s *FirebaseStatsService) syncAnalyticsDay(ctx context.Context, bq *bigquery.Client, set *model.Setting, d time.Time) error {
@@ -185,14 +221,19 @@ func crashDataset(set *model.Setting) string {
 	return "firebase_crashlytics"
 }
 
-// skipMissing swallows a "table not found" (no export for that day) so a gap
-// isn't a hard error; other errors pass through.
+// errMissingTable marks a "BigQuery table not found" (the export doesn't exist
+// yet). It's not a hard failure — the sync reports it so a 0 result is
+// explained rather than looking like a silent success.
+var errMissingTable = errors.New("bigquery export table not found")
+
+// skipMissing maps a "table not found" to errMissingTable; other errors pass
+// through unchanged.
 func skipMissing(err error) error {
 	if err == nil {
 		return nil
 	}
 	if strings.Contains(strings.ToLower(err.Error()), "not found") {
-		return nil
+		return errMissingTable
 	}
 	return err
 }

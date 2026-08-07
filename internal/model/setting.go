@@ -155,6 +155,11 @@ type Setting struct {
 	// message is sent and when the AI reply arrives — admin-toggleable.
 	ChatSoundsEnabled bool `gorm:"not null;default:true" json:"chat_sounds_enabled"`
 
+	// FirebaseSyncStatus / At record the outcome of the last BigQuery sync so the
+	// admin dashboards can explain a 0 result (e.g. "export table not found").
+	FirebaseSyncStatus string     `gorm:"size:400" json:"firebase_sync_status"`
+	FirebaseSyncAt     *time.Time `json:"firebase_sync_at"`
+
 	// Computed (not stored): whether each secret is on file.
 	NexmoSecretSet       bool `gorm:"-" json:"nexmo_secret_set"`
 	SmsExpertPasswordSet bool `gorm:"-" json:"smsexpert_password_set"`

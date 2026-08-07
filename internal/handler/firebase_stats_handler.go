@@ -79,10 +79,12 @@ func (h *FirebaseStatsHandler) Analytics(c *fiber.Ctx) error {
 			"sessions":     totalSessions,
 			"events":       totalEvents,
 		},
-		"hourly":     hourly,
-		"top_events": topCounts(events, 10),
-		"platforms":  topCounts(platforms, 10),
-		"series":     series,
+		"hourly":       hourly,
+		"top_events":   topCounts(events, 10),
+		"platforms":    topCounts(platforms, 10),
+		"series":       series,
+		"last_sync":    lastSyncStatus(set),
+		"last_sync_at": lastSyncAt(set),
 	})
 }
 
@@ -128,11 +130,29 @@ func (h *FirebaseStatsHandler) Crashlytics(c *fiber.Ctx) error {
 			"affected_users":   totalAffected,
 			"crash_free_users": latestCrashFree,
 		},
-		"hourly":     hourly,
-		"top_issues": topIssues(issues, 10),
-		"versions":   topCounts(versions, 10),
-		"series":     series,
+		"hourly":       hourly,
+		"top_issues":   topIssues(issues, 10),
+		"versions":     topCounts(versions, 10),
+		"series":       series,
+		"last_sync":    lastSyncStatus(set),
+		"last_sync_at": lastSyncAt(set),
 	})
+}
+
+// lastSyncStatus / lastSyncAt expose the last BigQuery sync outcome so the
+// dashboards can explain a 0 result.
+func lastSyncStatus(s *model.Setting) string {
+	if s == nil {
+		return ""
+	}
+	return s.FirebaseSyncStatus
+}
+
+func lastSyncAt(s *model.Setting) any {
+	if s == nil || s.FirebaseSyncAt == nil {
+		return nil
+	}
+	return s.FirebaseSyncAt
 }
 
 // Sync queues an on-demand BigQuery sync (last 7 days) on RabbitMQ and returns
