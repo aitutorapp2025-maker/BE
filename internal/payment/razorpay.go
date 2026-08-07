@@ -166,6 +166,16 @@ func (c *Client) CreatePlan(name string, amountPaise, intervalMonths int) (strin
 
 // post sends a JSON body to a Razorpay endpoint with basic auth and decodes the
 // JSON response into out. Returns an error (with a truncated body) on non-200.
+// CancelSubscription cancels a Razorpay subscription immediately, so it stops
+// auto-debiting (used when a student deletes their account).
+func (c *Client) CancelSubscription(subscriptionID string) error {
+	if subscriptionID == "" {
+		return nil
+	}
+	url := subscriptionsURL + "/" + subscriptionID + "/cancel"
+	return c.post(url, map[string]any{"cancel_at_cycle_end": 0}, nil)
+}
+
 func (c *Client) post(url string, body any, out any) error {
 	cfg := c.cfg()
 	if !cfg.Enabled() {

@@ -77,6 +77,25 @@ func NewPaymentService(
 // Enabled reports whether Razorpay is configured.
 func (s *PaymentService) Enabled() bool { return s.cfg().Enabled() }
 
+// CancelAutopay cancels a student's Razorpay AutoPay subscription (so it can't
+// keep charging them) — called when the student deletes their account. Best
+// effort: returns any Razorpay error, but the caller proceeds with deletion.
+func (s *PaymentService) CancelAutopay(studentID uint) error {
+	st, err := s.students.FindByID(studentID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(st.RazorpaySubscriptionID) == "" {
+		return nil // no subscription to cancel
+	}
+	if err := s.client.CancelSubscription(st.RazorpaySubscriptionID); err != nil {
+		return err
+	}
+	st.AutopayActive = false
+	st.RazorpaySubscriptionID = ""
+	return s.students.Update(st)
+}
+
 // SubscribeResult is returned to the app to open checkout.
 type SubscribeResult struct {
 	SubscriptionID string `json:"subscription_id"`

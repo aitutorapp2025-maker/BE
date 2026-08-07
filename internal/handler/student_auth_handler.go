@@ -16,19 +16,23 @@ type StudentAuthHandler struct {
 	groups   *repository.ClassGroupRepository
 	autopay  service.AutopayEnabledFunc
 	referral *service.ReferralService
+	payment  *service.PaymentService // cancel AutoPay on account deletion
 }
 
 // NewStudentAuthHandler builds a StudentAuthHandler. The class-group repo is
 // used to validate the subject group the student picks during onboarding. The
 // autopay func gates the "enable autopay" prompt behind the admin toggle. The
 // referral service attributes a new signup to a referrer when a code is passed.
+// The payment service cancels the student's Razorpay AutoPay on deletion.
 func NewStudentAuthHandler(
 	auth *service.StudentAuthService,
 	groups *repository.ClassGroupRepository,
 	autopay service.AutopayEnabledFunc,
 	referral *service.ReferralService,
+	payment *service.PaymentService,
 ) *StudentAuthHandler {
-	return &StudentAuthHandler{auth: auth, groups: groups, autopay: autopay, referral: referral}
+	return &StudentAuthHandler{
+		auth: auth, groups: groups, autopay: autopay, referral: referral, payment: payment}
 }
 
 // attributeReferral best-effort links a brand-new student to a referrer. Never
@@ -188,6 +192,11 @@ func (h *StudentAuthHandler) DeleteAccount(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
 	}
 	sid, _ := c.Locals("sid").(string)
+	// Cancel the student's Razorpay AutoPay first, so a deleted account can't
+	// keep being auto-debited. Best-effort — deletion proceeds regardless.
+	if h.payment != nil {
+		_ = h.payment.CancelAutopay(studentID)
+	}
 	if err := h.auth.DeleteAccount(c.Context(), studentID, sid); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to delete account")
 	}
