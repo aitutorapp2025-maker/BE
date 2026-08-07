@@ -116,6 +116,13 @@ func (s *PaymentService) CreateSubscription(studentID, planID uint) (*SubscribeR
 	if strings.TrimSpace(plan.RazorpayPlanID) == "" {
 		return nil, fmt.Errorf("this plan isn't linked to Razorpay yet")
 	}
+	// Cancel any previous subscription first, so the student never has two active
+	// mandates and a stale/old-price subscription can't be resumed at checkout
+	// (the cause of "still shows ₹5" — an old subscription from a former price).
+	if old := strings.TrimSpace(st.RazorpaySubscriptionID); old != "" {
+		_ = s.client.CancelSubscription(old)
+		st.RazorpaySubscriptionID = ""
+	}
 	// Setup must only CONFIRM the mandate (a small UPI-AutoPay ₹1-style
 	// confirmation) and register it for the plan amount — it must NEVER charge
 	// the full plan amount up front. So the first real plan debit is always
