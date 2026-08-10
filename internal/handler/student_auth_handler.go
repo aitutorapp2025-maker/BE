@@ -16,7 +16,8 @@ type StudentAuthHandler struct {
 	groups   *repository.ClassGroupRepository
 	autopay  service.AutopayEnabledFunc
 	referral *service.ReferralService
-	payment  *service.PaymentService // cancel AutoPay on account deletion
+	payment  *service.PaymentService      // cancel AutoPay on account deletion
+	profilePwd service.AutopayEnabledFunc // admin "profile password lock" toggle
 }
 
 // NewStudentAuthHandler builds a StudentAuthHandler. The class-group repo is
@@ -30,9 +31,11 @@ func NewStudentAuthHandler(
 	autopay service.AutopayEnabledFunc,
 	referral *service.ReferralService,
 	payment *service.PaymentService,
+	profilePwd service.AutopayEnabledFunc,
 ) *StudentAuthHandler {
 	return &StudentAuthHandler{
-		auth: auth, groups: groups, autopay: autopay, referral: referral, payment: payment}
+		auth: auth, groups: groups, autopay: autopay, referral: referral,
+		payment: payment, profilePwd: profilePwd}
 }
 
 // attributeReferral best-effort links a brand-new student to a referrer. Never
@@ -211,6 +214,10 @@ type updateProfileRequest struct {
 	StudentGroup     string `json:"student_group"`
 	TeachingLanguage string `json:"teaching_language"`
 	ParentPhone      string `json:"parent_phone"`
+	// Profile-password lock: new_password sets/changes it; current_password
+	// confirms the edit when one already exists.
+	NewPassword     string `json:"new_password"`
+	CurrentPassword string `json:"current_password"`
 }
 
 // UpdateProfile saves the signed-in student's profile so it persists on the
@@ -235,6 +242,7 @@ func (h *StudentAuthHandler) UpdateProfile(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	pwdEnabled := h.profilePwd != nil && h.profilePwd()
 	st, err := h.auth.UpdateProfile(c.Context(), studentID, service.StudentProfileInput{
 		Name:             req.Name,
 		StudentClass:     req.StudentClass,
@@ -243,7 +251,13 @@ func (h *StudentAuthHandler) UpdateProfile(c *fiber.Ctx) error {
 		StudentGroup:     group,
 		TeachingLanguage: req.TeachingLanguage,
 		ParentPhone:      req.ParentPhone,
+		PasswordEnabled:  pwdEnabled,
+		NewPassword:      req.NewPassword,
+		CurrentPassword:  req.CurrentPassword,
 	})
+	if errors.Is(err, service.ErrWrongProfilePassword) {
+		return fiber.NewError(fiber.StatusBadRequest, "incorrect password")
+	}
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "could not save your profile")
 	}

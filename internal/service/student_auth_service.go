@@ -16,6 +16,7 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/session"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/sms"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Student OTP-login errors.
@@ -332,7 +333,16 @@ type StudentProfileInput struct {
 	StudentGroup     string
 	TeachingLanguage string
 	ParentPhone      string
+	// Profile-password lock (only enforced when PasswordEnabled). NewPassword sets
+	// or changes it; CurrentPassword confirms edits once one exists.
+	PasswordEnabled bool
+	NewPassword     string
+	CurrentPassword string
 }
+
+// ErrWrongProfilePassword is returned when the profile-edit password is missing
+// or incorrect (the edit is rejected).
+var ErrWrongProfilePassword = errors.New("incorrect password")
 
 // GetStudent returns a student by id (for the signed-in student to load their
 // own account).
@@ -361,6 +371,26 @@ func (s *StudentAuthService) UpdateProfile(ctx context.Context, studentID uint, 
 	if err != nil {
 		return nil, err
 	}
+	// Profile-password lock. When enabled and a password already exists, the edit
+	// must carry the correct current password. A new password (set or change) is
+	// bcrypt-hashed. (Setting the first password needs no current password — used
+	// for the optional onboarding set and the forced-set on first edit.)
+	if in.PasswordEnabled {
+		if st.ProfilePasswordHash != "" {
+			if strings.TrimSpace(in.CurrentPassword) == "" ||
+				bcrypt.CompareHashAndPassword([]byte(st.ProfilePasswordHash),
+					[]byte(in.CurrentPassword)) != nil {
+				return nil, ErrWrongProfilePassword
+			}
+		}
+		if np := strings.TrimSpace(in.NewPassword); np != "" {
+			hash, err := bcrypt.GenerateFromPassword([]byte(np), bcrypt.DefaultCost)
+			if err != nil {
+				return nil, err
+			}
+			st.ProfilePasswordHash = string(hash)
+		}
+	}
 	st.Name = strings.TrimSpace(in.Name)
 	st.StudentClass = strings.TrimSpace(in.StudentClass)
 	st.Board = strings.TrimSpace(in.Board)
@@ -371,6 +401,7 @@ func (s *StudentAuthService) UpdateProfile(ctx context.Context, studentID uint, 
 	if err := s.students.Update(st); err != nil {
 		return nil, err
 	}
+	st.ProfilePasswordSet = st.ProfilePasswordHash != ""
 	return st, nil
 }
 

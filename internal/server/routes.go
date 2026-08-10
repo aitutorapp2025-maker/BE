@@ -113,7 +113,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	referralRepo := repository.NewReferralRepository(d.DB)
 	referralService := service.NewReferralService(studentRepo, referralRepo, settingRepo)
 	referralHandler := handler.NewReferralHandler(referralService, referralRepo)
-	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo, autopayEnabled, referralService, d.Payments)
+	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo, autopayEnabled, referralService, d.Payments, service.ProfilePasswordProvider(settingRepo))
 	tutorHandler := handler.NewTutorHandler(tutorService, studentRepo, creditService, autopayEnabled)
 	chatHistoryHandler := handler.NewChatHistoryHandler(repository.NewChatMessageRepository(d.DB))
 	// Background push publisher (RabbitMQ) — shared by the support handler (notify

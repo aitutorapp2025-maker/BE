@@ -51,6 +51,18 @@ func AutopayProvider(settings *repository.SettingRepository) AutopayEnabledFunc 
 	}
 }
 
+// ProfilePasswordProvider reads the admin "profile password lock" toggle
+// (defaults off). Reuses the AutopayEnabledFunc (func() bool) shape.
+func ProfilePasswordProvider(settings *repository.SettingRepository) AutopayEnabledFunc {
+	return func() bool {
+		s, err := settings.Get()
+		if err != nil {
+			return false
+		}
+		return s.ProfilePasswordEnabled
+	}
+}
+
 // PaymentService creates UPI-AutoPay subscriptions and processes Razorpay
 // webhooks, granting plan credits on each successful charge.
 type PaymentService struct {

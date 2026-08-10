@@ -52,6 +52,13 @@ type Student struct {
 	// expires with no auto-debit.
 	AutopayActive bool      `gorm:"not null;default:false" json:"autopay_active"`
 
+	// ProfilePasswordHash is a bcrypt hash of the student's profile password —
+	// used (when the admin enables the feature) to confirm/authorize profile
+	// edits. Never returned. ProfilePasswordSet (computed, AfterFind) tells the
+	// app whether one is set, so it knows to ask to SET vs VERIFY.
+	ProfilePasswordHash string `gorm:"size:100" json:"-"`
+	ProfilePasswordSet  bool   `gorm:"-" json:"profile_password_set"`
+
 	// Referral program. ReferralCode is this student's own share code, generated
 	// lazily the first time they open Refer & Earn — so most rows have '' until
 	// then. Uniqueness is enforced by a PARTIAL unique index (only non-empty,
@@ -76,3 +83,10 @@ type Student struct {
 
 // TableName sets the table name explicitly.
 func (Student) TableName() string { return "students" }
+
+// AfterFind sets the computed ProfilePasswordSet flag whenever a student is
+// loaded, so the app can tell whether a profile password already exists.
+func (s *Student) AfterFind(tx *gorm.DB) error {
+	s.ProfilePasswordSet = s.ProfilePasswordHash != ""
+	return nil
+}

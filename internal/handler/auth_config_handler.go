@@ -32,6 +32,7 @@ func (h *AuthConfigHandler) Get(c *fiber.Ctx) error {
 	logoURL, androidURL, iosURL, supportWhatsApp := "", "", "", ""
 	castOn, timedOn, referralOn, crashTestOn := false, false, false, false
 	chatSoundsOn := true // sounds on by default unless an admin turns them off
+	profilePwdOn := false
 	if s, err := h.settings.Get(); err == nil {
 		if s.AppName != "" {
 			appName = s.AppName
@@ -45,6 +46,7 @@ func (h *AuthConfigHandler) Get(c *fiber.Ctx) error {
 		referralOn = s.ReferralEnabled
 		crashTestOn = s.CrashTestEnabled
 		chatSoundsOn = s.ChatSoundsEnabled
+		profilePwdOn = s.ProfilePasswordEnabled
 	}
 	return c.JSON(fiber.Map{
 		"success":             true,
@@ -58,6 +60,7 @@ func (h *AuthConfigHandler) Get(c *fiber.Ctx) error {
 		"referral_enabled":    referralOn,
 		"crash_test_enabled":  crashTestOn,
 		"chat_sounds_enabled": chatSoundsOn,
+		"profile_password_enabled": profilePwdOn,
 		"google_sso_enabled":  googleOn,
 		"google_client_id":    clientID,
 	})

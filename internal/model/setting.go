@@ -155,6 +155,11 @@ type Setting struct {
 	// message is sent and when the AI reply arrives — admin-toggleable.
 	ChatSoundsEnabled bool `gorm:"not null;default:true" json:"chat_sounds_enabled"`
 
+	// ProfilePasswordEnabled turns on the profile-edit password lock: students are
+	// asked to set a password (optional at onboarding, required on profile update
+	// if empty), and must enter it to save profile changes. Admin-toggleable.
+	ProfilePasswordEnabled bool `gorm:"not null;default:false" json:"profile_password_enabled"`
+
 	// FirebaseSyncStatus / At record the outcome of the last BigQuery sync so the
 	// admin dashboards can explain a 0 result (e.g. "export table not found").
 	FirebaseSyncStatus string     `gorm:"size:400" json:"firebase_sync_status"`
