@@ -160,6 +160,11 @@ type Setting struct {
 	// if empty), and must enter it to save profile changes. Admin-toggleable.
 	ProfilePasswordEnabled bool `gorm:"not null;default:false" json:"profile_password_enabled"`
 
+	// BiometricEnabled makes the "Unlock with fingerprint" option available in the
+	// mobile app; a student who turns it on must pass biometric auth to open the
+	// app. Admin-toggleable (feature availability).
+	BiometricEnabled bool `gorm:"not null;default:false" json:"biometric_enabled"`
+
 	// FirebaseSyncStatus / At record the outcome of the last BigQuery sync so the
 	// admin dashboards can explain a 0 result (e.g. "export table not found").
 	FirebaseSyncStatus string     `gorm:"size:400" json:"firebase_sync_status"`

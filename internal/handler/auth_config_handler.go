@@ -33,6 +33,7 @@ func (h *AuthConfigHandler) Get(c *fiber.Ctx) error {
 	castOn, timedOn, referralOn, crashTestOn := false, false, false, false
 	chatSoundsOn := true // sounds on by default unless an admin turns them off
 	profilePwdOn := false
+	biometricOn := false
 	if s, err := h.settings.Get(); err == nil {
 		if s.AppName != "" {
 			appName = s.AppName
@@ -47,6 +48,7 @@ func (h *AuthConfigHandler) Get(c *fiber.Ctx) error {
 		crashTestOn = s.CrashTestEnabled
 		chatSoundsOn = s.ChatSoundsEnabled
 		profilePwdOn = s.ProfilePasswordEnabled
+		biometricOn = s.BiometricEnabled
 	}
 	return c.JSON(fiber.Map{
 		"success":             true,
@@ -61,6 +63,7 @@ func (h *AuthConfigHandler) Get(c *fiber.Ctx) error {
 		"crash_test_enabled":  crashTestOn,
 		"chat_sounds_enabled": chatSoundsOn,
 		"profile_password_enabled": profilePwdOn,
+		"biometric_enabled":        biometricOn,
 		"google_sso_enabled":  googleOn,
 		"google_client_id":    clientID,
 	})

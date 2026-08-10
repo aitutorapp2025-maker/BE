@@ -127,6 +127,7 @@ type settingRequest struct {
 	CrashTestEnabled   bool   `json:"crash_test_enabled"`
 	ChatSoundsEnabled  bool   `json:"chat_sounds_enabled"`
 	ProfilePasswordEnabled bool `json:"profile_password_enabled"`
+	BiometricEnabled       bool `json:"biometric_enabled"`
 }
 
 // Maintenance returns the public maintenance status for the customer apps.
@@ -373,6 +374,7 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.CrashTestEnabled = req.CrashTestEnabled
 	s.ChatSoundsEnabled = req.ChatSoundsEnabled
 	s.ProfilePasswordEnabled = req.ProfilePasswordEnabled
+	s.BiometricEnabled = req.BiometricEnabled
 
 	if err := h.settings.Save(s); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to save settings")
