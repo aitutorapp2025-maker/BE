@@ -52,6 +52,9 @@ func Connect(cfg config.Config) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(25)
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetConnMaxLifetime(time.Hour)
+	// Release connections that sit idle between traffic bursts, so the pool
+	// doesn't hold 10 open sessions during quiet periods.
+	sqlDB.SetConnMaxIdleTime(10 * time.Minute)
 
 	if err := sqlDB.Ping(); err != nil {
 		return nil, fmt.Errorf("postgres ping: %w", err)

@@ -9,7 +9,9 @@ import "time"
 // device (last-read id), so there's no read flag here.
 type Notification struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
-	StudentID uint      `gorm:"index;not null" json:"student_id"` // 0 = all customers
+	// Covered by the composite idx_notifications_student_created — no standalone
+	// index. (created_at keeps its own index for the global broadcast feed.)
+	StudentID uint      `gorm:"not null" json:"student_id"` // 0 = all customers
 	Title     string    `gorm:"size:200" json:"title"`
 	Body      string    `gorm:"size:1000" json:"body"`
 	Image     string    `gorm:"size:400" json:"image"`

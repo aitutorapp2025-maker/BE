@@ -4,6 +4,7 @@ package server
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/alert"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/config"
@@ -49,6 +50,15 @@ func New(d Deps) *fiber.App {
 		// becomes ~21 MB. Fiber's default 4 MB limit rejected them before the
 		// handler ran ("unable to upload"). 32 MB comfortably covers the max.
 		BodyLimit: 32 * 1024 * 1024,
+		// Timeouts stop a slow or hung client from holding a connection (and its
+		// goroutine + a pool slot) forever — slow-loris protection and pool safety.
+		// ReadTimeout bounds how long we wait to receive the full request; IdleTimeout
+		// bounds keep-alive reuse between requests. WriteTimeout is intentionally 0
+		// (unlimited): the AI tutor answers over long-lived SSE streams, and any
+		// non-zero WriteTimeout would cut a live answer off mid-stream.
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 0,
+		IdleTimeout:  120 * time.Second,
 	})
 
 	// recover turns panics into errors routed to the ErrorHandler above.
@@ -63,7 +73,12 @@ func New(d Deps) *fiber.App {
 		ExposeHeaders: "X-Encrypted",
 	}))
 
-	// Serve admin-uploaded assets (e.g. the landing OG image) from disk.
+	// Serve admin-uploaded assets (e.g. the landing OG image) from disk. These are
+	// static files, so let browsers/CDNs cache them for a day to cut re-fetches.
+	app.Use("/uploads", func(c *fiber.Ctx) error {
+		c.Set("Cache-Control", "public, max-age=86400")
+		return c.Next()
+	})
 	app.Static("/uploads", d.Cfg.Uploads.Dir)
 
 	registerRoutes(app, d)

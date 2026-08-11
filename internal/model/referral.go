@@ -8,7 +8,8 @@ import "time"
 // so a referrer can't farm rewards by re-linking the same account.
 type Referral struct {
 	ID           uint   `gorm:"primaryKey" json:"id"`
-	ReferrerID   uint   `gorm:"index;not null" json:"referrer_id"`
+	// Covered by the composite idx_referrals_referrer_created — no standalone index.
+	ReferrerID   uint   `gorm:"not null" json:"referrer_id"`
 	RefereeID    uint   `gorm:"uniqueIndex;not null" json:"referee_id"`
 	Code         string `gorm:"size:16;index" json:"code"`
 	RewardRupees int    `json:"reward_rupees"`

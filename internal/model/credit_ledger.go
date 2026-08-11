@@ -8,7 +8,8 @@ import "time"
 // Σ AICostPaise, profit = revenue − cost.
 type CreditLedger struct {
 	ID        uint   `gorm:"primaryKey" json:"id"`
-	StudentID uint   `gorm:"not null;index" json:"student_id"`
+	// Covered by the composite idx_credit_student_created — no standalone index.
+	StudentID uint   `gorm:"not null" json:"student_id"`
 	Kind      string `gorm:"size:20;not null" json:"kind"` // grant | recharge | debit
 	Action    string `gorm:"size:40" json:"action"`        // debit only: ask_text, oral_exam, …
 	Credits   int    `gorm:"not null" json:"credits"`      // signed: +grant/recharge, −debit

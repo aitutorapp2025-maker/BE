@@ -25,6 +25,31 @@ func (r *StudentRepository) List() ([]model.Student, error) {
 	return students, err
 }
 
+// Count returns the total number of (non-deleted) students. Cheaper than
+// loading every row just to take len().
+func (r *StudentRepository) Count() (int64, error) {
+	var n int64
+	err := r.db.Model(&model.Student{}).Count(&n).Error
+	return n, err
+}
+
+// NamesByID returns an id→name map for all students, selecting only the two
+// columns needed (used to label report rows) instead of hydrating full rows.
+func (r *StudentRepository) NamesByID() (map[uint]string, error) {
+	var rows []struct {
+		ID   uint
+		Name string
+	}
+	if err := r.db.Model(&model.Student{}).Select("id", "name").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	m := make(map[uint]string, len(rows))
+	for _, s := range rows {
+		m[s.ID] = s.Name
+	}
+	return m, nil
+}
+
 // ListPaged returns a page of students (newest first) plus the total count. An
 // optional search matches name/phone/email. Avoids loading every student row.
 func (r *StudentRepository) ListPaged(limit, offset int, search string) ([]model.Student, int64, error) {

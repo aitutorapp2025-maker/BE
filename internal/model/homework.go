@@ -7,7 +7,9 @@ import "time"
 // into a handful of learning tasks the student works through one by one.
 type Homework struct {
 	ID        uint           `gorm:"primaryKey" json:"id"`
-	StudentID uint           `gorm:"index;not null" json:"student_id"`
+	// Covered by the composite idx_homeworks_student_created / _updated, so no
+	// standalone index tag here (it would just be redundant write overhead).
+	StudentID uint           `gorm:"not null" json:"student_id"`
 	Subject   string         `gorm:"size:60" json:"subject"`
 	Title     string         `gorm:"size:160" json:"title"`
 	Summary   string         `gorm:"type:text" json:"summary"`
@@ -29,7 +31,8 @@ func (Homework) TableName() string { return "homeworks" }
 // phases); for now a task carries its title/description/order and a status.
 type HomeworkTask struct {
 	ID          uint      `gorm:"primaryKey" json:"id"`
-	HomeworkID  uint      `gorm:"index;not null" json:"homework_id"`
+	// Covered by the composite idx_hw_tasks_hw_order — no standalone index tag.
+	HomeworkID  uint      `gorm:"not null" json:"homework_id"`
 	OrderNo     int       `gorm:"not null;default:0" json:"order_no"`
 	Title       string    `gorm:"size:200" json:"title"`
 	Description string    `gorm:"type:text" json:"description"`
@@ -52,7 +55,9 @@ func (HomeworkTask) TableName() string { return "homework_tasks" }
 // the per-question breakdown as JSON so the report can show it.
 type HomeworkTest struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
-	HomeworkID uint      `gorm:"index;not null" json:"homework_id"`
+	// HomeworkID is covered by the composite idx_hw_tests_hw_student; StudentID
+	// keeps its own index (it's not the leading column of any composite).
+	HomeworkID uint      `gorm:"not null" json:"homework_id"`
 	StudentID  uint      `gorm:"index;not null" json:"student_id"`
 	Kind       string    `gorm:"size:20;not null;default:written" json:"kind"` // written | oral
 	Score      int       `gorm:"not null;default:0" json:"score"`

@@ -7,7 +7,9 @@ import "time"
 // streams distinguished by ActorType ("admin" vs "student").
 type AuditLog struct {
 	ID         uint   `gorm:"primaryKey" json:"id"`
-	ActorType  string `gorm:"size:10;index;not null" json:"actor_type"` // admin | student
+	// ActorType is covered by the composite idx_audit_actor_created — no standalone
+	// index. ActorID keeps its own (not a leading column of any composite).
+	ActorType  string `gorm:"size:10;not null" json:"actor_type"` // admin | student
 	ActorID    uint   `gorm:"index;not null" json:"actor_id"`
 	ActorLabel string `gorm:"size:150" json:"actor_label"` // email (admin) / phone (student)
 	Method     string `gorm:"size:8" json:"method"`

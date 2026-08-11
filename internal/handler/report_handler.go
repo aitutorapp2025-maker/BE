@@ -142,14 +142,10 @@ func (h *ReportHandler) Payments(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to load payments")
 	}
-	// Resolve student names once.
-	students, err := h.students.List()
+	// Resolve student names once (id→name projection, not full rows).
+	names, err := h.students.NamesByID()
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to load students")
-	}
-	names := make(map[uint]string, len(students))
-	for _, s := range students {
-		names[s.ID] = s.Name
 	}
 
 	header := []string{"Date", "Student ID", "Student", "Type", "Credits",
@@ -177,7 +173,7 @@ func (h *ReportHandler) Summary(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to load summary")
 	}
-	students, err := h.students.List()
+	totalStudents, err := h.students.Count()
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to load students")
 	}
@@ -205,7 +201,7 @@ func (h *ReportHandler) Summary(c *fiber.Ctx) error {
 		{"Gross profit (₹)", rupees(profit)},
 		{"Gross margin (%)", margin},
 		{"Paying students", fmt.Sprint(p.Students)},
-		{"Total students (all)", fmt.Sprint(len(students))},
+		{"Total students (all)", fmt.Sprint(totalStudents)},
 		{"AI actions (debits)", fmt.Sprint(p.Debits)},
 		{"Generated", time.Now().Format("2006-01-02 15:04")},
 	}

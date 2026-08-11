@@ -111,6 +111,21 @@ func CreateIndexes(db *gorm.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_referrals_referrer_created ON referrals (referrer_id, created_at DESC)`,
 		// Notification feed per student (broadcast rows share student_id 0).
 		`CREATE INDEX IF NOT EXISTS idx_notifications_student_created ON notifications (student_id, created_at DESC)`,
+		// Recent chat window per student (capped fetch in ListByStudent, sorted by sent_at).
+		`CREATE INDEX IF NOT EXISTS idx_chat_student_sent ON chat_messages (student_id, sent_at DESC)`,
+		// Drop redundant single-column indexes: each is fully covered by the LEADING
+		// column of a composite index above, so the planner never uses it — it only
+		// adds write overhead. (The matching gorm:"index" struct tags were removed so
+		// AutoMigrate won't recreate them.) StudentID indexes that are NOT a composite
+		// leading column (homework_tests, payment_events, support_tickets, device_tokens)
+		// and the standalone created_at indexes are intentionally kept.
+		`DROP INDEX IF EXISTS idx_homeworks_student_id`,
+		`DROP INDEX IF EXISTS idx_homework_tasks_homework_id`,
+		`DROP INDEX IF EXISTS idx_homework_tests_homework_id`,
+		`DROP INDEX IF EXISTS idx_credit_ledger_student_id`,
+		`DROP INDEX IF EXISTS idx_notifications_student_id`,
+		`DROP INDEX IF EXISTS idx_referrals_referrer_id`,
+		`DROP INDEX IF EXISTS idx_audit_logs_actor_type`,
 		// Referral code uniqueness must be PARTIAL: the code is generated lazily so
 		// most rows share '' (empty), and soft-deleted rows are retained — a plain
 		// unique index rejects the 2nd empty / a resurrected email (SQLSTATE 23505).

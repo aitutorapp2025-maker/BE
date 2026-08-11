@@ -16,14 +16,31 @@ func NewChatMessageRepository(db *gorm.DB) *ChatMessageRepository {
 	return &ChatMessageRepository{db: db}
 }
 
-// ListByStudent returns a student's full conversation, oldest first.
+// maxChatHistory caps how many recent messages the server returns per student.
+// A conversation grows without bound over months, and every row is loaded and
+// E2E-encrypted on each chat-screen open — so we return only the most recent
+// window. Nothing is lost: the app keeps its own local history and re-pushes it
+// idempotently (UpsertBatch), so older messages stay on the device and in the DB.
+const maxChatHistory = 200
+
+// ListByStudent returns the student's most recent messages (up to
+// maxChatHistory), oldest first for display. The DB fetch is newest-first with a
+// LIMIT (served by idx_chat_student_sent), then reversed in memory.
 func (r *ChatMessageRepository) ListByStudent(studentID uint) ([]model.ChatMessage, error) {
 	var out []model.ChatMessage
 	err := r.db.
 		Where("student_id = ?", studentID).
-		Order("sent_at ASC, id ASC").
+		Order("sent_at DESC, id DESC").
+		Limit(maxChatHistory).
 		Find(&out).Error
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	// Reverse to oldest-first so the app renders the window in reading order.
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, nil
 }
 
 // UpsertBatch inserts messages, ignoring any whose (student_id, client_id)
