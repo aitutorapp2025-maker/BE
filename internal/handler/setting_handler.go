@@ -160,9 +160,14 @@ func (h *SettingHandler) AppVersion(c *fiber.Ctx) error {
 	latest := strings.TrimSpace(s.LatestAppVersion)
 	minv := strings.TrimSpace(s.MinAppVersion)
 
-	updateAvailable := latest != "" && cmpVersion(current, latest) < 0
-	force := (minv != "" && cmpVersion(current, minv) < 0) ||
-		(s.ForceUpdate && updateAvailable)
+	// An update is "available" when a newer version is published, OR when the
+	// admin flips the blanket "Force update" switch (a manual override to make
+	// everyone update now, regardless of the version numbers).
+	updateAvailable := (latest != "" && cmpVersion(current, latest) < 0) ||
+		s.ForceUpdate
+	// Mandatory when the app is below the minimum supported version, or the
+	// blanket Force-update switch is on.
+	force := (minv != "" && cmpVersion(current, minv) < 0) || s.ForceUpdate
 
 	storeURL := s.AndroidStoreURL
 	if platform == "ios" {
