@@ -54,6 +54,16 @@ func main() {
 		log.Warnf("some performance indexes were not created: %v", err)
 	}
 
+	// Convert audit_logs to a monthly RANGE-partitioned table (retention becomes
+	// a cheap partition DROP — essential at scale, where audit is the largest
+	// table). Non-fatal: on failure the table stays plain and the cleanup cron
+	// falls back to DELETE-based retention.
+	if migrated, err := database.MigrateAuditPartitions(db); err != nil {
+		log.Warnf("audit-log partitioning unavailable (DELETE retention fallback): %v", err)
+	} else if migrated {
+		log.Infof("audit_logs converted to monthly partitions")
+	}
+
 	// Vector store for the tutoring pipeline — only if pgvector is installed on
 	// the PostgreSQL server. When it isn't, the AI features stay off but the app
 	// still boots (the worker/route degrade to a clear "not configured" error).
@@ -264,9 +274,9 @@ func main() {
 		{scheduler.ChargeDueMandatesJob(paymentService),
 			"Charge due autopay mandates",
 			"Auto-debits due UPI-AutoPay mandates (headless flow) and grants plan credits."},
-		{scheduler.CleanupAuditLogsJob(repository.NewAuditLogRepository(db)),
+		{scheduler.CleanupAuditLogsJob(db),
 			"Cleanup audit logs",
-			"Deletes audit-log entries older than 90 days (retention)."},
+			"Drops audit-log partitions older than the 90-day retention window."},
 		{scheduler.ReferralPromoJob(settingRepo, pushPublisher),
 			"Referral promo push",
 			"Every 3 days, sends all customers an FCM push promoting refer & earn (only when the referral program is on)."},

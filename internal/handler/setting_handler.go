@@ -98,11 +98,16 @@ type settingRequest struct {
 	LocalEmbedURL      string `json:"local_embed_url"`
 	LocalEmbedModel    string `json:"local_embed_model"`
 
-	// Razorpay. Secrets are write-only; key_id is not a secret.
-	RazorpayEnabled       bool   `json:"razorpay_enabled"`
-	RazorpayKeyID         string `json:"razorpay_key_id"`
-	RazorpayKeySecret     string `json:"razorpay_key_secret"`
-	RazorpayWebhookSecret string `json:"razorpay_webhook_secret"`
+	// Razorpay. Secrets are write-only; key ids are not secrets. Both the live
+	// and test key sets are stored; RazorpayTestMode picks the active one.
+	RazorpayEnabled           bool   `json:"razorpay_enabled"`
+	RazorpayKeyID             string `json:"razorpay_key_id"`
+	RazorpayKeySecret         string `json:"razorpay_key_secret"`
+	RazorpayWebhookSecret     string `json:"razorpay_webhook_secret"`
+	RazorpayTestMode          bool   `json:"razorpay_test_mode"`
+	RazorpayTestKeyID         string `json:"razorpay_test_key_id"`
+	RazorpayTestKeySecret     string `json:"razorpay_test_key_secret"`
+	RazorpayTestWebhookSecret string `json:"razorpay_test_webhook_secret"`
 
 	// Whether trials require a UPI-AutoPay mandate (admin-toggleable).
 	AutopayEnabled bool `json:"autopay_enabled"`
@@ -234,6 +239,8 @@ func (h *SettingHandler) Get(c *fiber.Ctx) error {
 	s.VoyageKeySet = s.VoyageAPIKey != ""
 	s.RazorpaySecretSet = s.RazorpayKeySecret != ""
 	s.RazorpayWebhookSet = s.RazorpayWebhookSecret != ""
+	s.RazorpayTestSecretSet = s.RazorpayTestKeySecret != ""
+	s.RazorpayTestWebhookSet = s.RazorpayTestWebhookSecret != ""
 	s.FcmConfigured = s.FcmServiceAccount != ""
 	return c.JSON(fiber.Map{"success": true, "settings": s})
 }
@@ -348,7 +355,7 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 		s.VoyageAPIKey = strings.TrimSpace(req.VoyageAPIKey)
 	}
 
-	// Razorpay. key_id is not a secret; the two secrets only overwrite when set.
+	// Razorpay. Key ids are not secrets; the secrets only overwrite when set.
 	s.RazorpayEnabled = req.RazorpayEnabled
 	s.RazorpayKeyID = strings.TrimSpace(req.RazorpayKeyID)
 	if strings.TrimSpace(req.RazorpayKeySecret) != "" {
@@ -356,6 +363,14 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	}
 	if strings.TrimSpace(req.RazorpayWebhookSecret) != "" {
 		s.RazorpayWebhookSecret = strings.TrimSpace(req.RazorpayWebhookSecret)
+	}
+	s.RazorpayTestMode = req.RazorpayTestMode
+	s.RazorpayTestKeyID = strings.TrimSpace(req.RazorpayTestKeyID)
+	if strings.TrimSpace(req.RazorpayTestKeySecret) != "" {
+		s.RazorpayTestKeySecret = strings.TrimSpace(req.RazorpayTestKeySecret)
+	}
+	if strings.TrimSpace(req.RazorpayTestWebhookSecret) != "" {
+		s.RazorpayTestWebhookSecret = strings.TrimSpace(req.RazorpayTestWebhookSecret)
 	}
 	s.AutopayEnabled = req.AutopayEnabled
 	s.CastEnabled = req.CastEnabled
@@ -392,6 +407,8 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.VoyageKeySet = s.VoyageAPIKey != ""
 	s.RazorpaySecretSet = s.RazorpayKeySecret != ""
 	s.RazorpayWebhookSet = s.RazorpayWebhookSecret != ""
+	s.RazorpayTestSecretSet = s.RazorpayTestKeySecret != ""
+	s.RazorpayTestWebhookSet = s.RazorpayTestWebhookSecret != ""
 	s.FcmConfigured = s.FcmServiceAccount != ""
 	return c.JSON(fiber.Map{"success": true, "settings": s})
 }

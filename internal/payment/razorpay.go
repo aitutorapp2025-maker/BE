@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -36,6 +37,11 @@ type Config struct {
 // Enabled reports whether Razorpay is configured for creating subscriptions.
 func (c Config) Enabled() bool { return c.KeyID != "" && c.KeySecret != "" }
 
+// IsTest reports whether the active credentials are test-mode keys. Razorpay
+// objects (plans, subscriptions) are mode-scoped, so callers use this to pick
+// the matching stored ids.
+func (c Config) IsTest() bool { return strings.HasPrefix(c.KeyID, "rzp_test_") }
+
 // ConfigFunc returns the current Razorpay config, evaluated per call so admin
 // changes take effect without a restart.
 type ConfigFunc func() Config
@@ -51,6 +57,19 @@ func NewClient(cfg ConfigFunc) *Client {
 	return &Client{cfg: cfg, http: &http.Client{Timeout: 30 * time.Second}}
 }
 
+// TestMode reports whether the client is currently using test-mode keys.
+func (c *Client) TestMode() bool { return c.cfg().IsTest() }
+
+// IntervalMonths maps a plan's duration (days) to a monthly-cycle count for
+// Razorpay (30d -> 1, 90d -> 3, 365d -> 12), min 1.
+func IntervalMonths(durationDays int) int {
+	m := (durationDays + 15) / 30
+	if m < 1 {
+		return 1
+	}
+	return m
+}
+
 type createSubReq struct {
 	PlanID         string `json:"plan_id"`
 	TotalCount     int    `json:"total_count"`
@@ -64,6 +83,7 @@ type createSubReq struct {
 // Subscription is the subset of the Razorpay response we use.
 type Subscription struct {
 	ID       string `json:"id"`
+	PlanID   string `json:"plan_id"`
 	ShortURL string `json:"short_url"`
 	Status   string `json:"status"`
 }
@@ -162,6 +182,20 @@ func (c *Client) CreatePlan(name string, amountPaise, intervalMonths int) (strin
 		return "", fmt.Errorf("razorpay: empty plan id in response")
 	}
 	return out.ID, nil
+}
+
+// FetchSubscription reads a subscription's current state from Razorpay
+// (read-only). Used to reconcile the mandate flag when a webhook was missed
+// (e.g. dev machine not publicly reachable, or a delivery failure in prod).
+func (c *Client) FetchSubscription(subscriptionID string) (*Subscription, error) {
+	if subscriptionID == "" {
+		return nil, fmt.Errorf("empty subscription id")
+	}
+	var sub Subscription
+	if err := c.get(subscriptionsURL+"/"+subscriptionID, &sub); err != nil {
+		return nil, err
+	}
+	return &sub, nil
 }
 
 // post sends a JSON body to a Razorpay endpoint with basic auth and decodes the

@@ -182,6 +182,12 @@ func (h *StudentAuthHandler) Me(c *fiber.Ctx) error {
 	// but only when the admin has autopay enabled. When disabled, trials are
 	// usable without a mandate and no prompt is ever shown.
 	needsAutopay := h.autopay() && st.PayStatus == "trial" && !st.AutopayActive
+	// A student who completed checkout but whose webhook never arrived would be
+	// stuck on the prompt forever — reconcile against Razorpay directly (the
+	// call is throttled per student inside the service).
+	if needsAutopay && h.payment != nil && h.payment.ReconcileAutopay(st) {
+		needsAutopay = false
+	}
 	return c.JSON(fiber.Map{"success": true, "student": st, "needs_autopay": needsAutopay})
 }
 

@@ -5,23 +5,45 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/database"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/fcm"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
+	"gorm.io/gorm"
 )
 
-// CleanupAuditLogsJob deletes audit entries older than the retention window (90
-// days). Runs once per calendar day.
-func CleanupAuditLogsJob(audits *repository.AuditLogRepository) Job {
+// CleanupAuditLogsJob enforces the 90-day audit retention window. Runs once per
+// calendar day. On the monthly-partitioned audit_logs table it pre-creates the
+// upcoming partitions, then DROPs every partition whose whole month is past the
+// cutoff — instant, instead of deleting millions of rows. (A row therefore
+// lives until its month ages out: up to ~30 days past the 90-day cutoff.)
+// Falls back to a plain DELETE if the table was never converted (partition
+// migration failed at boot).
+func CleanupAuditLogsJob(db *gorm.DB) Job {
 	return Job{
 		Key:      "cleanup_audit_logs",
 		Schedule: "daily",
 		Run: func(now time.Time) (string, error) {
-			n, err := audits.DeleteOlderThan(now.AddDate(0, 0, -90))
+			cutoff := now.AddDate(0, 0, -90)
+			partitioned, err := database.IsAuditPartitioned(db)
 			if err != nil {
 				return "", err
 			}
-			return fmt.Sprintf("deleted %d old audit log(s)", n), nil
+			if !partitioned {
+				n, err := database.DeleteAuditOlderThan(db, cutoff)
+				if err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("deleted %d old audit log(s) (unpartitioned fallback)", n), nil
+			}
+			if err := database.EnsureAuditPartitions(db, now); err != nil {
+				return "", err
+			}
+			dropped, err := database.DropOldAuditPartitions(db, cutoff)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("dropped %d expired audit partition(s)", dropped), nil
 		},
 	}
 }

@@ -353,25 +353,23 @@ func EnsureTrialPlan(db *gorm.DB) error {
 		Update("is_trial", true).Error
 }
 
-// EnsureStarterPlans inserts the three paid tiers by name if they're missing.
-// It never updates or deletes an existing plan, so admin edits are preserved —
-// it only backfills a database that predates these plans.
+// EnsureStarterPlans backfills the paid tiers on a database that predates
+// them. It only acts when NO paid plan exists at all: once the admin has
+// curated the plan list (re-priced a tier, deleted one), re-inserting a
+// missing name would resurrect a deliberately deleted plan on every boot.
 func EnsureStarterPlans(db *gorm.DB) (int, error) {
-	added := 0
-	for _, p := range starterPaidPlans() {
-		var count int64
-		if err := db.Model(&model.Plan{}).Where("name = ?", p.Name).Count(&count).Error; err != nil {
-			return added, err
-		}
-		if count > 0 {
-			continue
-		}
-		if err := db.Create(&p).Error; err != nil {
-			return added, err
-		}
-		added++
+	var count int64
+	if err := db.Model(&model.Plan{}).Where("price_rupees > 0").Count(&count).Error; err != nil {
+		return 0, err
 	}
-	return added, nil
+	if count > 0 {
+		return 0, nil
+	}
+	plans := starterPaidPlans()
+	if err := db.Create(&plans).Error; err != nil {
+		return 0, err
+	}
+	return len(plans), nil
 }
 
 // SeedSettings inserts the single default settings row if none exists.

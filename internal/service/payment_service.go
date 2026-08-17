@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/config"
@@ -15,6 +16,8 @@ import (
 
 // RazorpayProvider reads the Razorpay keys from the DB (admin Settings), env as
 // a fallback. Evaluated per call so admin changes take effect without a restart.
+// The admin "Test mode" toggle (RazorpayTestMode) selects which stored key set
+// is active — both live and test credentials stay saved.
 func RazorpayProvider(settings *repository.SettingRepository, env config.RazorpayConfig) payment.ConfigFunc {
 	return func() payment.Config {
 		out := payment.Config{KeyID: env.KeyID, KeySecret: env.KeySecret, WebhookSecret: env.WebhookSecret}
@@ -22,13 +25,17 @@ func RazorpayProvider(settings *repository.SettingRepository, env config.Razorpa
 		if err != nil {
 			return out
 		}
-		if v := strings.TrimSpace(s.RazorpayKeyID); v != "" {
+		keyID, keySecret, webhook := s.RazorpayKeyID, s.RazorpayKeySecret, s.RazorpayWebhookSecret
+		if s.RazorpayTestMode {
+			keyID, keySecret, webhook = s.RazorpayTestKeyID, s.RazorpayTestKeySecret, s.RazorpayTestWebhookSecret
+		}
+		if v := strings.TrimSpace(keyID); v != "" {
 			out.KeyID = v
 		}
-		if v := strings.TrimSpace(s.RazorpayKeySecret); v != "" {
+		if v := strings.TrimSpace(keySecret); v != "" {
 			out.KeySecret = v
 		}
-		if v := strings.TrimSpace(s.RazorpayWebhookSecret); v != "" {
+		if v := strings.TrimSpace(webhook); v != "" {
 			out.WebhookSecret = v
 		}
 		return out
@@ -72,6 +79,11 @@ type PaymentService struct {
 	plans    *repository.PlanRepository
 	credits  *CreditService
 	events   *repository.PaymentEventRepository
+
+	// reconcileAt throttles per-student Razorpay status polls (ReconcileAutopay
+	// is called from /student/me while a mandate looks pending).
+	reconcileMu sync.Mutex
+	reconcileAt map[uint]time.Time
 }
 
 // NewPaymentService builds a PaymentService.
@@ -83,7 +95,45 @@ func NewPaymentService(
 	credits *CreditService,
 	events *repository.PaymentEventRepository,
 ) *PaymentService {
-	return &PaymentService{client: client, cfg: cfg, students: students, plans: plans, credits: credits, events: events}
+	return &PaymentService{client: client, cfg: cfg, students: students, plans: plans,
+		credits: credits, events: events, reconcileAt: map[uint]time.Time{}}
+}
+
+// ReconcileAutopay checks the student's Razorpay subscription directly and
+// marks the mandate active if Razorpay says it is authenticated/active. This
+// is the fallback for a MISSED webhook (backend not publicly reachable in dev,
+// or a delivery failure in prod): the app polls /student/me while it shows the
+// "set up autopay" prompt, so a completed mandate heals within one throttle
+// window instead of sticking forever. Returns true if the flag was flipped.
+// Throttled to one Razorpay call per student per 30s.
+func (s *PaymentService) ReconcileAutopay(st *model.Student) bool {
+	if st == nil || st.AutopayActive || strings.TrimSpace(st.RazorpaySubscriptionID) == "" || !s.Enabled() {
+		return false
+	}
+	s.reconcileMu.Lock()
+	if t, ok := s.reconcileAt[st.ID]; ok && time.Since(t) < 30*time.Second {
+		s.reconcileMu.Unlock()
+		return false
+	}
+	s.reconcileAt[st.ID] = time.Now()
+	s.reconcileMu.Unlock()
+
+	sub, err := s.client.FetchSubscription(st.RazorpaySubscriptionID)
+	if err != nil {
+		return false
+	}
+	switch sub.Status {
+	case "authenticated", "active":
+		st.AutopayActive = true
+		if err := s.students.Update(st); err != nil {
+			return false
+		}
+		// Same Billing row the webhook writes on first activation.
+		_, _ = s.credits.Grant(int(st.ID), 0, 0, "autopay_setup",
+			"AutoPay setup confirmation (up to ₹5, refunded by Razorpay)")
+		return true
+	}
+	return false
 }
 
 // Enabled reports whether Razorpay is configured.
@@ -113,6 +163,9 @@ type SubscribeResult struct {
 	SubscriptionID string `json:"subscription_id"`
 	ShortURL       string `json:"short_url"` // hosted UPI-AutoPay mandate page
 	KeyID          string `json:"key_id"`    // for the native Razorpay SDK, if used
+	// AlreadyActive means the student's existing mandate is authenticated —
+	// there is nothing to pay; the app should skip checkout and refresh.
+	AlreadyActive bool `json:"already_active"`
 }
 
 // CreateSubscription starts a UPI-AutoPay subscription for a student + plan.
@@ -125,13 +178,50 @@ func (s *PaymentService) CreateSubscription(studentID, planID uint) (*SubscribeR
 	if err != nil {
 		return nil, fmt.Errorf("plan: %w", err)
 	}
-	if strings.TrimSpace(plan.RazorpayPlanID) == "" {
-		return nil, fmt.Errorf("this plan isn't linked to Razorpay yet")
+	// Razorpay plan ids are mode-scoped (live vs test) — use the id matching
+	// the active keys, creating it on the fly when this plan has never been
+	// used in this mode (e.g. right after the admin flips the Live/Test
+	// toggle for tiers that predate it).
+	testMode := s.cfg().IsTest()
+	rzpPlanID := strings.TrimSpace(plan.RzpPlanID(testMode))
+	if rzpPlanID == "" {
+		id, err := s.client.CreatePlan(plan.Name, plan.PriceRupees*100, payment.IntervalMonths(plan.DurationDays))
+		if err != nil {
+			return nil, fmt.Errorf("this plan isn't linked to Razorpay yet (auto-create failed: %w)", err)
+		}
+		plan.SetRzpPlanID(testMode, id)
+		if err := s.plans.Update(plan); err != nil {
+			return nil, fmt.Errorf("save razorpay plan link: %w", err)
+		}
+		rzpPlanID = id
 	}
-	// Cancel any previous subscription first, so the student never has two active
-	// mandates and a stale/old-price subscription can't be resumed at checkout
-	// (the cause of "still shows ₹5" — an old subscription from a former price).
+	// Handle an existing subscription CAREFULLY — a blind cancel-before-create
+	// once killed a mandate the student had just paid (the webhook announcing
+	// it was missed, the app kept prompting, and the retry cancelled the good
+	// subscription while its ₹5 auth was in flight):
+	//   - authenticated/active on the SAME plan → nothing to pay; mark the
+	//     mandate active and tell the app to skip checkout.
+	//   - still awaiting payment on the SAME plan → reuse it (Razorpay allows
+	//     retrying checkout on the same subscription).
+	//   - dead (cancelled/expired/completed) or a DIFFERENT plan → cancel
+	//     best-effort and create a fresh one below.
 	if old := strings.TrimSpace(st.RazorpaySubscriptionID); old != "" {
+		if sub, err := s.client.FetchSubscription(old); err == nil && sub.PlanID == rzpPlanID {
+			switch sub.Status {
+			case "authenticated", "active":
+				if !st.AutopayActive {
+					st.AutopayActive = true
+					if err := s.students.Update(st); err != nil {
+						return nil, fmt.Errorf("save mandate state: %w", err)
+					}
+					_, _ = s.credits.Grant(int(st.ID), 0, 0, "autopay_setup",
+						"AutoPay setup confirmation (up to ₹5, refunded by Razorpay)")
+				}
+				return &SubscribeResult{SubscriptionID: old, KeyID: s.cfg().KeyID, AlreadyActive: true}, nil
+			case "created", "pending":
+				return &SubscribeResult{SubscriptionID: old, ShortURL: sub.ShortURL, KeyID: s.cfg().KeyID}, nil
+			}
+		}
 		_ = s.client.CancelSubscription(old)
 		st.RazorpaySubscriptionID = ""
 	}
@@ -146,7 +236,7 @@ func (s *PaymentService) CreateSubscription(studentID, planID uint) (*SubscribeR
 		startAt = st.TrialEndsAt.Unix()
 	}
 	// Authorize 12 cycles by default; the mandate can be renewed later.
-	sub, err := s.client.CreateSubscription(plan.RazorpayPlanID, 12*plan.DurationDays/30, startAt)
+	sub, err := s.client.CreateSubscription(rzpPlanID, 12*plan.DurationDays/30, startAt)
 	if err != nil {
 		return nil, err
 	}
@@ -393,10 +483,13 @@ func (s *PaymentService) HandleWebhook(body []byte, signature string) (bool, err
 			wasActive := st.AutopayActive
 			st.AutopayActive = true
 			_ = s.students.Update(st)
-			// Record the ₹1 AutoPay setup in Billing (once, on first activation).
+			// Record the AutoPay setup in Billing (once, on first activation).
+			// On the hosted Subscriptions flow Razorpay charges its own small
+			// authorization amount (up to ₹5) and auto-refunds it, so record
+			// zero revenue — the note explains what the student saw at setup.
 			if !wasActive {
-				_, _ = s.credits.Grant(int(st.ID), 0, 100, "autopay_setup",
-					"AutoPay setup (₹1)")
+				_, _ = s.credits.Grant(int(st.ID), 0, 0, "autopay_setup",
+					"AutoPay setup confirmation (up to ₹5, refunded by Razorpay)")
 			}
 		}
 		return true, nil

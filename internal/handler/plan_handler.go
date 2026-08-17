@@ -20,19 +20,20 @@ func NewPlanHandler(plans *repository.PlanRepository, razorpay *payment.Client) 
 	return &PlanHandler{plans: plans, razorpay: razorpay}
 }
 
-// syncRazorpayPlan creates a Razorpay plan for a paid tier and returns its id.
-// It runs when the tier is paid (not a trial) and no id was set manually. Since
-// Razorpay plans are immutable, callers use this on create and whenever the
-// price/duration changes. Returns an error the caller surfaces to the admin.
+// syncRazorpayPlan creates a Razorpay plan for a paid tier in the CURRENTLY
+// ACTIVE mode (live or test — Razorpay plan ids are mode-scoped) and stores it
+// on the matching column. Since Razorpay plans are immutable, callers use this
+// on create and whenever the price/duration changes. Returns an error the
+// caller surfaces to the admin.
 func (h *PlanHandler) syncRazorpayPlan(p *model.Plan) error {
 	if p.IsTrial || p.PriceRupees <= 0 {
 		return nil // free / trial plans have no Razorpay plan
 	}
-	id, err := h.razorpay.CreatePlan(p.Name, p.PriceRupees*100, razorpayIntervalMonths(p.DurationDays))
+	id, err := h.razorpay.CreatePlan(p.Name, p.PriceRupees*100, payment.IntervalMonths(p.DurationDays))
 	if err != nil {
 		return err
 	}
-	p.RazorpayPlanID = id
+	p.SetRzpPlanID(h.razorpay.TestMode(), id)
 	return nil
 }
 
@@ -93,9 +94,10 @@ func (h *PlanHandler) Create(c *fiber.Ctx) error {
 		Features: req.Features, BestValue: req.BestValue, Credits: req.Credits,
 		IsTrial: req.IsTrial, RazorpayPlanID: strings.TrimSpace(req.RazorpayPlanID),
 	}
-	// Auto-create the Razorpay plan for a paid tier (unless an id was given).
+	// Auto-create the Razorpay plan for a paid tier in the active mode (unless
+	// a live id was given manually).
 	var warning string
-	if p.RazorpayPlanID == "" {
+	if p.RzpPlanID(h.razorpay.TestMode()) == "" {
 		if err := h.syncRazorpayPlan(p); err != nil {
 			warning = razorpayWarn(err)
 		}
@@ -124,7 +126,9 @@ func (h *PlanHandler) Update(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	oldPrice, oldDuration, oldRZP := p.PriceRupees, p.DurationDays, p.RazorpayPlanID
+	testMode := h.razorpay.TestMode()
+	oldPrice, oldDuration := p.PriceRupees, p.DurationDays
+	oldActive := p.RzpPlanID(testMode)
 	p.Name = req.Name
 	p.PriceRupees = req.PriceRupees
 	p.MrpRupees = req.MrpRupees
@@ -137,22 +141,27 @@ func (h *PlanHandler) Update(c *fiber.Ctx) error {
 	p.RazorpayPlanID = strings.TrimSpace(req.RazorpayPlanID)
 
 	// Razorpay plans are immutable, so (re)create one whenever the price or
-	// billing period changes, or when a paid tier has no id yet.
+	// billing period changes, or when a paid tier has no id yet in the ACTIVE
+	// mode. On a price change BOTH mode ids are stale — clear them so neither
+	// mode can ever charge the old amount (the other mode's id is recreated
+	// lazily on its next use).
 	var warning string
 	priceChanged := p.PriceRupees != oldPrice || p.DurationDays != oldDuration
+	if priceChanged {
+		p.RazorpayPlanID = ""
+		p.RazorpayTestPlanID = ""
+	}
 	needsSync := !p.IsTrial && p.PriceRupees > 0 &&
-		(priceChanged || p.RazorpayPlanID == "")
+		(priceChanged || p.RzpPlanID(testMode) == "")
 	if needsSync {
 		if err := h.syncRazorpayPlan(p); err != nil {
-			// Razorpay plans are immutable. If the price/period changed we must NOT
-			// keep the old plan id — it would keep charging the previous amount
-			// (the "changed ₹5→₹2 but checkout shows ₹5" bug). Clear it so AutoPay
-			// fails cleanly ("plan not linked") until a valid plan is created; the
-			// next save retries the sync automatically.
-			if priceChanged {
-				p.RazorpayPlanID = ""
-			} else if p.RazorpayPlanID == "" {
-				p.RazorpayPlanID = oldRZP // unchanged price: keep the previous link
+			// Creation failed. After a price change the ids MUST stay cleared (an
+			// old id would keep charging the previous amount — the "changed ₹5→₹2
+			// but checkout shows ₹5" bug); AutoPay fails cleanly ("not linked")
+			// until the next save or subscribe retries the sync. With an
+			// unchanged price, keep the previous link.
+			if !priceChanged && p.RzpPlanID(testMode) == "" {
+				p.SetRzpPlanID(testMode, oldActive)
 			}
 			warning = razorpayWarn(err)
 		}
@@ -171,15 +180,6 @@ func razorpayWarn(err error) string {
 	return "Plan saved, but the Razorpay plan couldn't be created: " + err.Error()
 }
 
-// razorpayIntervalMonths maps a plan's duration (days) to a monthly-cycle count
-// for Razorpay (30d -> 1, 90d -> 3, 365d -> 12), min 1.
-func razorpayIntervalMonths(durationDays int) int {
-	m := (durationDays + 15) / 30
-	if m < 1 {
-		return 1
-	}
-	return m
-}
 
 // Delete removes a plan. DELETE /api/v1/admin/plans/:id
 func (h *PlanHandler) Delete(c *fiber.Ctx) error {

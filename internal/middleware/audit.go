@@ -71,8 +71,15 @@ func Audit(record func(AuditEntry)) fiber.Handler {
 
 		// Capture the (decrypted) request and (plaintext) response payloads —
 		// sanitized: secrets redacted, size-capped, binary/multipart omitted.
-		e.RequestBody = sanitizeBody(c.Body(), string(c.Request().Header.ContentType()))
-		e.ResponseBody = sanitizeBody(c.Response().Body(), string(c.Response().Header.ContentType()))
+		// WRITE operations only: GET/HEAD responses (list/detail reads) are the
+		// bulk of traffic and their payloads add nothing to a "who changed what"
+		// trail, so they aren't stored — at lakh-student scale they would
+		// otherwise dominate the database. Method/path/query/status are still
+		// recorded for every request.
+		if e.Method != fiber.MethodGet && e.Method != fiber.MethodHead {
+			e.RequestBody = sanitizeBody(c.Body(), string(c.Request().Header.ContentType()))
+			e.ResponseBody = sanitizeBody(c.Response().Body(), string(c.Response().Header.ContentType()))
+		}
 
 		if id, ok := c.Locals("admin_id").(uint); ok && id != 0 {
 			e.ActorType = "admin"
@@ -96,7 +103,9 @@ func Audit(record func(AuditEntry)) fiber.Handler {
 }
 
 // maxAuditBody caps a stored payload; larger ones are truncated with a marker.
-const maxAuditBody = 8 * 1024
+// 2KB keeps the review trail useful (a full form submit fits) while bounding
+// per-row storage — at 100k students the audit table is the largest in the DB.
+const maxAuditBody = 2 * 1024
 
 // sanitizeBody returns a safe, size-capped, secret-redacted string for a request
 // or response payload. Non-JSON bodies (multipart uploads, binary) are not

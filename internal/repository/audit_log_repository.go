@@ -1,8 +1,10 @@
 package repository
 
 import (
+	"strings"
 	"time"
 
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/database"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"gorm.io/gorm"
 )
@@ -24,18 +26,24 @@ func (r *AuditLogRepository) Record(a *model.AuditLog) error {
 
 // RecordBatch inserts many audit entries in one round trip (used by the buffered
 // writer). No-op on an empty slice.
+//
+// Self-healing across month rollovers: audit_logs is partitioned by month
+// (database.MigrateAuditPartitions) and partitions are normally pre-created a
+// month ahead, but if the process runs long enough to outlive them (cleanup
+// cron disabled, no restarts) an insert would hit a month with no partition.
+// That specific failure creates the missing partitions and retries once, so
+// audit writes never depend on the cron being enabled.
 func (r *AuditLogRepository) RecordBatch(logs []model.AuditLog) error {
 	if len(logs) == 0 {
 		return nil
 	}
-	return r.db.CreateInBatches(logs, 100).Error
-}
-
-// DeleteOlderThan removes audit entries created before [cutoff] and returns how
-// many were deleted (used by the retention cleanup cron).
-func (r *AuditLogRepository) DeleteOlderThan(cutoff time.Time) (int64, error) {
-	res := r.db.Where("created_at < ?", cutoff).Delete(&model.AuditLog{})
-	return res.RowsAffected, res.Error
+	err := r.db.CreateInBatches(logs, 100).Error
+	if err != nil && strings.Contains(err.Error(), "no partition of relation") {
+		if ensureErr := database.EnsureAuditPartitions(r.db, time.Now()); ensureErr == nil {
+			err = r.db.CreateInBatches(logs, 100).Error
+		}
+	}
+	return err
 }
 
 // List returns audit entries filtered by actor type (empty = all) and an

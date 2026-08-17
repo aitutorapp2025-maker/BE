@@ -20,12 +20,17 @@ type AuditLog struct {
 	UserAgent  string `gorm:"size:300" json:"user_agent"`
 	LatencyMs  int64  `json:"latency_ms"` // handler time in milliseconds
 	// RequestBody / ResponseBody are the decrypted request and plaintext response
-	// payloads, captured for admin review. Secrets (password/token/…) are redacted
-	// and each is capped in size; binary/multipart bodies are omitted. Excluded
-	// from the list query (loaded only via the detail endpoint).
+	// payloads, captured for admin review — write operations only (GET/HEAD
+	// payloads aren't stored). Secrets (password/token/…) are redacted and each
+	// is capped in size; binary/multipart bodies are omitted. Excluded from the
+	// list query (loaded only via the detail endpoint).
 	RequestBody  string    `gorm:"type:text" json:"request_body"`
 	ResponseBody string    `gorm:"type:text" json:"response_body"`
-	CreatedAt    time.Time `gorm:"index" json:"created_at"`
+	// NOT NULL is required: created_at is the partition key of the monthly-
+	// partitioned audit_logs and part of its (id, created_at) primary key —
+	// without the tag AutoMigrate tries DROP NOT NULL, which Postgres rejects
+	// on a PK column (42P16).
+	CreatedAt time.Time `gorm:"index;not null" json:"created_at"`
 }
 
 // TableName sets the table name explicitly.

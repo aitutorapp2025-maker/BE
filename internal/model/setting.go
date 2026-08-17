@@ -106,6 +106,13 @@ type Setting struct {
 	RazorpayKeyID         string `gorm:"size:80" json:"razorpay_key_id"`
 	RazorpayKeySecret     string `gorm:"size:120" json:"-"`
 	RazorpayWebhookSecret string `gorm:"size:120" json:"-"`
+	// Test-mode credentials + toggle. Both key sets are stored so the admin can
+	// flip between live and test without re-entering keys; the provider picks
+	// the active set by RazorpayTestMode.
+	RazorpayTestMode          bool   `gorm:"not null;default:false" json:"razorpay_test_mode"`
+	RazorpayTestKeyID         string `gorm:"size:80" json:"razorpay_test_key_id"`
+	RazorpayTestKeySecret     string `gorm:"size:120" json:"-"`
+	RazorpayTestWebhookSecret string `gorm:"size:120" json:"-"`
 
 	// AutopayEnabled controls whether trials require a UPI-AutoPay mandate. When
 	// off, new customers are never prompted to enable autopay (the trial is
@@ -178,6 +185,8 @@ type Setting struct {
 	VoyageKeySet         bool `gorm:"-" json:"voyage_key_set"`
 	RazorpaySecretSet    bool `gorm:"-" json:"razorpay_secret_set"`
 	RazorpayWebhookSet   bool `gorm:"-" json:"razorpay_webhook_set"`
+	RazorpayTestSecretSet  bool `gorm:"-" json:"razorpay_test_secret_set"`
+	RazorpayTestWebhookSet bool `gorm:"-" json:"razorpay_test_webhook_set"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
