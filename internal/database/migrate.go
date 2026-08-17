@@ -20,6 +20,7 @@ const (
 // Migrate runs GORM auto-migration for all models.
 func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(
+		&model.AdminRole{}, // before Admin (admins.role_id references it)
 		&model.Admin{},
 		&model.Student{},
 		&model.SchoolClass{},

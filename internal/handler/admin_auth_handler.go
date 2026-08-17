@@ -7,18 +7,19 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/gofiber/fiber/v2"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // AdminAuthHandler handles admin authentication endpoints.
 type AdminAuthHandler struct {
 	auth   *service.AuthService
 	admins *repository.AdminRepository
+	users  *service.AdminUserService
 }
 
 // NewAdminAuthHandler builds an AdminAuthHandler.
-func NewAdminAuthHandler(auth *service.AuthService, admins *repository.AdminRepository) *AdminAuthHandler {
-	return &AdminAuthHandler{auth: auth, admins: admins}
+func NewAdminAuthHandler(auth *service.AuthService, admins *repository.AdminRepository,
+	users *service.AdminUserService) *AdminAuthHandler {
+	return &AdminAuthHandler{auth: auth, admins: admins, users: users}
 }
 
 // loginRequest is the JSON body for POST /admin/login.
@@ -106,16 +107,19 @@ func (h *AdminAuthHandler) Me(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusUnauthorized, "account not found")
 	}
+	admin.ApplyRole()
 	return c.JSON(fiber.Map{"success": true, "admin": admin})
 }
 
 type changePasswordRequest struct {
-	NewPassword string `json:"new_password"`
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
 }
 
-// ChangePassword updates the signed-in admin's password.
+// ChangePassword updates the signed-in admin's password after verifying the
+// current one.
 //
-// POST /api/v1/admin/change-password  { "new_password": "..." }
+// POST /api/v1/admin/change-password  { "current_password": "...", "new_password": "..." }
 func (h *AdminAuthHandler) ChangePassword(c *fiber.Ctx) error {
 	adminID, _ := c.Locals("admin_id").(uint)
 
@@ -123,16 +127,75 @@ func (h *AdminAuthHandler) ChangePassword(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 	}
-	if len(strings.TrimSpace(req.NewPassword)) < 4 {
-		return fiber.NewError(fiber.StatusBadRequest, "password must be at least 4 characters")
+	if len(strings.TrimSpace(req.NewPassword)) < 6 {
+		return fiber.NewError(fiber.StatusBadRequest, "password must be at least 6 characters")
 	}
-
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "failed to hash password")
+	if strings.TrimSpace(req.CurrentPassword) == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "current password is required")
 	}
-	if err := h.admins.UpdatePassword(adminID, string(hash)); err != nil {
+	if err := h.users.ChangePassword(adminID, req.CurrentPassword, req.NewPassword); err != nil {
+		if errors.Is(err, service.ErrWrongPassword) {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to update password")
 	}
 	return c.JSON(fiber.Map{"success": true})
+}
+
+type forgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+// ForgotPassword emails a 6-digit reset code to the admin. Always claims
+// success for unknown emails (no account enumeration).
+//
+// POST /api/v1/admin/forgot-password  { "email": "..." }  (public, anon-E2E)
+func (h *AdminAuthHandler) ForgotPassword(c *fiber.Ctx) error {
+	var req forgotPasswordRequest
+	if err := c.BodyParser(&req); err != nil || strings.TrimSpace(req.Email) == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "email is required")
+	}
+	if err := h.users.Forgot(c.Context(), req.Email); err != nil {
+		switch {
+		case errors.Is(err, service.ErrEmailNotSent):
+			return fiber.NewError(fiber.StatusServiceUnavailable, err.Error())
+		case errors.Is(err, service.ErrResendThrottled):
+			return fiber.NewError(fiber.StatusTooManyRequests, err.Error())
+		}
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to send reset code")
+	}
+	return c.JSON(fiber.Map{
+		"success": true,
+		"message": "If that email has an admin account, a reset code is on its way.",
+	})
+}
+
+type resetPasswordRequest struct {
+	Email       string `json:"email"`
+	Code        string `json:"code"`
+	NewPassword string `json:"new_password"`
+}
+
+// ResetPassword verifies the emailed code and sets the new password.
+//
+// POST /api/v1/admin/reset-password  { "email", "code", "new_password" }  (public, anon-E2E)
+func (h *AdminAuthHandler) ResetPassword(c *fiber.Ctx) error {
+	var req resetPasswordRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	if strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.Code) == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "email and code are required")
+	}
+	if len(strings.TrimSpace(req.NewPassword)) < 6 {
+		return fiber.NewError(fiber.StatusBadRequest, "password must be at least 6 characters")
+	}
+	if err := h.users.Reset(c.Context(), req.Email, req.Code, req.NewPassword); err != nil {
+		switch {
+		case errors.Is(err, service.ErrBadResetCode), errors.Is(err, service.ErrTooManyAttempts):
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to reset password")
+	}
+	return c.JSON(fiber.Map{"success": true, "message": "Password updated — you can sign in now."})
 }

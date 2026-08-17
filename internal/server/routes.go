@@ -81,7 +81,13 @@ func registerRoutes(app *fiber.App, d Deps) {
 		googleProvider)
 
 	healthHandler := handler.NewHealthHandler(d.DB, d.Redis, d.MQ)
-	adminAuthHandler := handler.NewAdminAuthHandler(authService, adminRepo)
+	// Admin users & roles (RBAC): accounts are created with an emailed temporary
+	// password; each role grants side-menu / settings-tab permission keys.
+	adminRoleRepo := repository.NewAdminRoleRepository(d.DB)
+	adminUserService := service.NewAdminUserService(
+		adminRepo, adminRoleRepo, emailPublisher, d.Redis, d.Cfg.Uploads.PublicBaseURL)
+	adminAuthHandler := handler.NewAdminAuthHandler(authService, adminRepo, adminUserService)
+	adminUserHandler := handler.NewAdminUserHandler(adminUserService, adminRepo, adminRoleRepo)
 	studentHandler := handler.NewStudentHandler(studentRepo)
 	classHandler := handler.NewClassHandler(classRepo, classGroupRepo)
 	classGroupHandler := handler.NewClassGroupHandler(classGroupRepo)
@@ -315,18 +321,38 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// wire. They are not signature-protected (no session/secret yet).
 	admin.Post("/login", enc, adminAuthHandler.Login)
 	admin.Post("/refresh", enc, adminAuthHandler.Refresh)
+	// Forgot/reset password — public like login (no session yet), anon-E2E so
+	// the email/code/new password stay opaque on the wire.
+	admin.Post("/forgot-password", enc, adminAuthHandler.ForgotPassword)
+	admin.Post("/reset-password", enc, adminAuthHandler.ResetPassword)
 
 	// Protected admin routes require a signed request: valid JWT + timestamp +
 	// HMAC signature + a one-time nonce (see middleware.SignedAdmin). The Encrypt
 	// middleware then transparently decrypts requests / encrypts responses for
-	// sessions that completed the E2E key exchange.
+	// sessions that completed the E2E key exchange. AdminPermission then enforces
+	// the signed-in admin's role permissions per route (super admins pass all).
 	adminProtected := admin.Group("",
 		middleware.SignedAdmin(d.Cfg, sessStore),
 		middleware.Encrypt(sessStore),
-		audit)
+		audit,
+		middleware.AdminPermission(adminRepo))
 	adminProtected.Get("/me", adminAuthHandler.Me)
 	adminProtected.Post("/logout", adminAuthHandler.Logout)
 	adminProtected.Post("/change-password", adminAuthHandler.ChangePassword)
+
+	// Admin users & roles (RBAC) — gated on the admin_users permission.
+	adminUsers := adminProtected.Group("/admins")
+	adminUsers.Get("", adminUserHandler.List)
+	adminUsers.Post("", adminUserHandler.Create)
+	adminUsers.Put("/:id", adminUserHandler.Update)
+	adminUsers.Delete("/:id", adminUserHandler.Delete)
+	adminUsers.Post("/:id/reset-password", adminUserHandler.ResetPassword)
+	adminRoles := adminProtected.Group("/roles")
+	adminRoles.Get("", adminUserHandler.ListRoles)
+	adminRoles.Post("", adminUserHandler.CreateRole)
+	adminRoles.Put("/:id", adminUserHandler.UpdateRole)
+	adminRoles.Delete("/:id", adminUserHandler.DeleteRole)
+	adminProtected.Get("/permissions", adminUserHandler.Permissions)
 
 	// Dashboard overview (aggregate stats + recent students).
 	adminProtected.Get("/dashboard", dashboardHandler.Get)

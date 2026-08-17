@@ -86,6 +86,9 @@ func (s *AuthService) AdminLogin(ctx context.Context, email, password, clientPub
 
 	_ = s.admins.TouchLastLogin(admin.ID)
 
+	// Resolve role → permission keys so the panel can filter menus/tabs.
+	admin.ApplyRole()
+
 	return &LoginResult{
 		Token:         token,
 		RefreshToken:  sess.RefreshToken,
@@ -116,6 +119,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*LoginR
 	if err != nil {
 		return nil, err
 	}
+	admin.ApplyRole()
 	return &LoginResult{
 		Token:        token,
 		RefreshToken: newRefresh,

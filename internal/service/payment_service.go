@@ -237,6 +237,24 @@ func (s *PaymentService) CreateSubscription(studentID, planID uint) (*SubscribeR
 	}
 	// Authorize 12 cycles by default; the mandate can be renewed later.
 	sub, err := s.client.CreateSubscription(rzpPlanID, 12*plan.DurationDays/30, startAt)
+	if err != nil && isStaleRzpID(err) {
+		// The stored mode-scoped plan id doesn't exist under the CURRENT keys.
+		// Razorpay ids are account-scoped, so this happens when the admin swaps
+		// the Razorpay account/keys (a plain key rotation keeps ids valid, a
+		// new account does not). Mint a fresh plan under the active keys, save
+		// it, and retry once — same self-heal philosophy as a price change.
+		id, cerr := s.client.CreatePlan(
+			plan.Name, plan.PriceRupees*100, payment.IntervalMonths(plan.DurationDays))
+		if cerr != nil {
+			return nil, fmt.Errorf("razorpay plan re-link failed: %w (original: %v)", cerr, err)
+		}
+		plan.SetRzpPlanID(testMode, id)
+		if serr := s.plans.Update(plan); serr != nil {
+			return nil, fmt.Errorf("save razorpay plan link: %w", serr)
+		}
+		rzpPlanID = id
+		sub, err = s.client.CreateSubscription(rzpPlanID, 12*plan.DurationDays/30, startAt)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -245,6 +263,18 @@ func (s *PaymentService) CreateSubscription(studentID, planID uint) (*SubscribeR
 		return nil, fmt.Errorf("save subscription: %w", err)
 	}
 	return &SubscribeResult{SubscriptionID: sub.ID, ShortURL: sub.ShortURL, KeyID: s.cfg().KeyID}, nil
+}
+
+// isStaleRzpID reports whether a Razorpay error means "this id doesn't exist
+// under the current keys" — the signature of an account/key switch (BAD_REQUEST
+// "The ID provided is invalid or could not be found").
+func isStaleRzpID(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "razorpay status 400") &&
+		(strings.Contains(msg, "could not be found") || strings.Contains(msg, "is invalid"))
 }
 
 // mandateAuthPaise is the small verification debit that registers the UPI-AutoPay
