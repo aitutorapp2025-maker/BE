@@ -205,6 +205,10 @@ func registerRoutes(app *fiber.App, d Deps) {
 	v1.Get("/class-groups", enc, classGroupHandler.Public)
 	// Subscription plans for the landing page + student app.
 	v1.Get("/plans", enc, planHandler.Public)
+	// Home-screen banners (admin-managed image/text promos) for the app.
+	bannerHandler := handler.NewHomeBannerHandler(
+		repository.NewHomeBannerRepository(d.DB, cacheStore))
+	v1.Get("/banners", enc, bannerHandler.Public)
 	// Maintenance status for the customer apps (web + mobile). Admin unaffected.
 	v1.Get("/maintenance", enc, settingHandler.Maintenance)
 	// Which sign-in methods to show on the login screen (Google SSO, …).
@@ -431,6 +435,14 @@ func registerRoutes(app *fiber.App, d Deps) {
 	plans.Get("/:id", planHandler.Get)
 	plans.Put("/:id", planHandler.Update)
 	plans.Delete("/:id", planHandler.Delete)
+
+	// Home-screen banners CRUD (+ image upload).
+	adminBanners := adminProtected.Group("/banners")
+	adminBanners.Get("", bannerHandler.List)
+	adminBanners.Post("", bannerHandler.Create)
+	adminBanners.Post("/image", uploadHandler.UploadBannerImage)
+	adminBanners.Put("/:id", bannerHandler.Update)
+	adminBanners.Delete("/:id", bannerHandler.Delete)
 
 	// Settings (singleton).
 	adminProtected.Get("/settings", settingHandler.Get)

@@ -56,6 +56,7 @@ const (
 	PermNotify      = "notifications"
 	PermAuditLogs   = "audit_logs"
 	PermAdminUsers  = "admin_users"
+	PermBanners     = "banners"
 )
 
 // Settings-tab permission keys. (The Account tab — the admin's own password —
@@ -99,6 +100,7 @@ var AllPermissions = []PermDef{
 	{PermNotify, "Send notification", "Side menu"},
 	{PermAuditLogs, "Audit logs", "Side menu"},
 	{PermAdminUsers, "Admin users & roles", "Side menu"},
+	{PermBanners, "Home banners", "Side menu"},
 
 	{PermSetOrganisation, "Organisation", "Settings tabs"},
 	{PermSetPreferences, "Preferences", "Settings tabs"},
@@ -192,6 +194,8 @@ func RequiredPermsForAdminRoute(method, seg string) []string {
 		return []string{PermSetReferral}
 	case "admins", "roles", "permissions":
 		return []string{PermAdminUsers}
+	case "banners":
+		return []string{PermBanners}
 	case "settings":
 		sub, _, _ := strings.Cut(rest, "/")
 		switch sub {

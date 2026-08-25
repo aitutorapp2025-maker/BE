@@ -17,6 +17,7 @@ const (
 	KeyTeachLangsActive  = "cfg:teachlangs:active"  // active teaching languages
 	KeyClassGroupsPrefix = "cfg:classgroups:active:" // + "<class>|<board>"
 	KeyLandingPublic     = "cfg:landing:public"     // assembled public landing payload
+	KeyHomeBanners       = "cfg:banners:active"     // active Home-screen banners
 )
 
 // Store is a no-expiry Redis cache for read-mostly config/master data. Values

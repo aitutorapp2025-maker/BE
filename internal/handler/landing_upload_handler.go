@@ -58,6 +58,12 @@ func (h *AssetUploadHandler) UploadNotificationImage(c *fiber.Ctx) error {
 	return h.save(c, "notif")
 }
 
+// UploadBannerImage stores a Home-screen banner image.
+// POST /admin/banners/image
+func (h *AssetUploadHandler) UploadBannerImage(c *fiber.Ctx) error {
+	return h.save(c, "banner")
+}
+
 // save decodes a base64 image from the request, writes it under <dir>/<subdir>,
 // and returns its public URL.
 func (h *AssetUploadHandler) save(c *fiber.Ctx, subdir string) error {

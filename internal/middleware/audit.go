@@ -170,6 +170,9 @@ func isSensitiveKey(k string) bool {
 	for _, s := range []string{
 		"password", "secret", "token", "api_key", "apikey",
 		"client_pub", "signing_secret", "authorization",
+		// The FCM service account is a full GCP credential (private key) and
+		// would otherwise land in audit_logs verbatim on a settings save.
+		"service_account", "private_key", "credentials",
 	} {
 		if strings.Contains(k, s) {
 			return true

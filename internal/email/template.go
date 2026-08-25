@@ -9,14 +9,15 @@ import (
 // theme: forest green + gold on parchment). [heading] is the big title shown at
 // the top of the card; [bodyHTML] is trusted HTML for the message body.
 func Wrap(heading, bodyHTML string) string {
+	// Matches the app's modern palette (FE core/theme/app_theme.dart).
 	const (
-		primary   = "#123F36"
-		secondary = "#E8A33D"
-		bg        = "#FAF6EC"
+		primary   = "#047857"
+		secondary = "#F59E0B"
+		bg        = "#F5F8F7"
 		surface   = "#FFFFFF"
-		text      = "#16302B"
-		muted     = "#5E6B63"
-		border    = "#EAE2D2"
+		text      = "#10231D"
+		muted     = "#5F7169"
+		border    = "#E3EAE7"
 	)
 
 	return fmt.Sprintf(`<!DOCTYPE html>
