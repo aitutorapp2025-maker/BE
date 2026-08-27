@@ -80,6 +80,18 @@ type Setting struct {
 	SmsExpertRoute    string `gorm:"size:20" json:"smsexpert_route"`    // route
 	SmsExpertType     string `gorm:"size:20" json:"smsexpert_type"`     // type
 
+	// WhatsApp (Meta Business Cloud API) — sends parents the daily study report.
+	// The access token is write-only; WhatsappTokenSet tells the admin UI one is
+	// on file. Template: an APPROVED template whose body is a single {{1}}
+	// parameter carrying the report text (required to message parents outside
+	// WhatsApp's 24-hour service window); empty sends free-form text instead.
+	WhatsappEnabled      bool   `gorm:"not null;default:false" json:"whatsapp_enabled"`
+	WhatsappToken        string `gorm:"size:600" json:"-"`
+	WhatsappPhoneID      string `gorm:"size:60" json:"whatsapp_phone_id"`
+	WhatsappTemplate     string `gorm:"size:120" json:"whatsapp_template"`
+	WhatsappTemplateLang string `gorm:"size:12" json:"whatsapp_template_lang"` // e.g. en / ta
+	WhatsappTokenSet     bool   `gorm:"-" json:"whatsapp_token_set"`
+
 	// CAPTCHA (bot protection on the public contact form). Secret is never
 	// serialized to the client; site key is public.
 	CaptchaEnabled  bool   `gorm:"not null;default:false" json:"captcha_enabled"`

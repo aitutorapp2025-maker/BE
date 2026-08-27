@@ -27,6 +27,7 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/server"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/sms"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/wa"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/worker"
 	"github.com/aitutorapp2025-maker/vaha-backend/pkg/logger"
 )
@@ -259,6 +260,31 @@ func main() {
 	// queued on RabbitMQ, delivered + pruned by the push worker).
 	pushPublisher := fcm.NewPublisher(mq, func() bool { return pushSender.Enabled() })
 
+	// WhatsApp (Meta Business Cloud API) for the parents' daily study report.
+	// Config comes live from admin Settings, so pasting the token applies
+	// without a restart.
+	waSender := wa.NewProvider(func() wa.Config {
+		s, err := settingRepo.Get()
+		if err != nil {
+			return wa.Config{}
+		}
+		return wa.Config{
+			Enabled:      s.WhatsappEnabled,
+			Token:        s.WhatsappToken,
+			PhoneID:      s.WhatsappPhoneID,
+			Template:     s.WhatsappTemplate,
+			TemplateLang: s.WhatsappTemplateLang,
+			CountryCode:  s.SmsCountryCode,
+		}
+	})
+	// The report cron only enqueues; this worker delivers in the background.
+	waPublisher := wa.NewPublisher(mq, waSender.Enabled)
+	if err := worker.StartWaWorker(mq, waSender, log); err != nil {
+		log.Errorf("wa worker: %v", err)
+	}
+
+	homeworkRepo := repository.NewHomeworkRepository(db)
+
 	sched := scheduler.New(cronRepo, log)
 	registrations := []struct {
 		job  scheduler.Job
@@ -283,6 +309,12 @@ func main() {
 		{scheduler.SyncFirebaseStatsJob(firebaseStats),
 			"Sync Firebase analytics + crashlytics",
 			"Once a day, pulls the Firebase Analytics + Crashlytics BigQuery export into our dashboards (only when enabled + configured)."},
+		{scheduler.TaskRemindersJob(homeworkRepo, deviceRepo, pushSender),
+			"Homework study-time reminders",
+			"Every minute, pushes 'Time to study' when a homework task's scheduled time arrives (each task reminded once; re-armed when the student moves the time)."},
+		{scheduler.ParentDailyReportJob(homeworkRepo, studentRepo, waPublisher),
+			"Parents' daily WhatsApp report",
+			"Once a day after 7 PM, WhatsApps each parent their child's study report — tasks completed, tests taken and the day's score (needs WhatsApp configured in Settings)."},
 	}
 	for _, r := range registrations {
 		if err := cronRepo.Ensure(model.CronJob{
@@ -292,7 +324,9 @@ func main() {
 		}
 		sched.Register(r.job)
 	}
-	sched.Start(time.Hour)
+	// Minute tick so study-time reminders land on time; hourly/daily jobs keep
+	// their own cadence via per-schedule gating in the scheduler.
+	sched.Start(time.Minute)
 	log.Infof("scheduler started (%d job(s), admin-managed)", len(registrations))
 
 	// ── HTTP server ──────────────────────────────────────────────────────

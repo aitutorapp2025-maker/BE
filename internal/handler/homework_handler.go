@@ -489,6 +489,35 @@ func (h *HomeworkHandler) SetTaskStatus(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"success": true, "homework": hw})
 }
 
+// RescheduleTask moves one task's study time to the student's chosen time and
+// re-arms its "time to study" push reminder.
+// PUT /api/v1/student/homework/:id/tasks/:taskId/schedule
+func (h *HomeworkHandler) RescheduleTask(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	taskID, _ := strconv.ParseUint(c.Params("taskId"), 10, 64)
+	if taskID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid task id")
+	}
+	var req struct {
+		ScheduledAt string `json:"scheduled_at"` // RFC3339
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	at, err := time.Parse(time.RFC3339, strings.TrimSpace(req.ScheduledAt))
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid scheduled_at (want RFC3339)")
+	}
+	hw, err := h.hw.RescheduleTask(studentID, uint(taskID), at)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	return c.JSON(fiber.Map{"success": true, "homework": hw})
+}
+
 // Get returns one homework (with tasks) scoped to the student.
 // GET /api/v1/student/homework/:id
 func (h *HomeworkHandler) Get(c *fiber.Ctx) error {

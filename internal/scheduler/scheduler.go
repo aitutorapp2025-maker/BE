@@ -16,7 +16,7 @@ import (
 // (e.g. "reminded 12") stored as the last result.
 type Job struct {
 	Key      string
-	Schedule string // "hourly" (every tick), "daily" (once/day), "everyNdays" (once/N days)
+	Schedule string // "minutely" (every tick), "hourly", "daily", "daily@H" (once/day, from hour H), "everyNdays"
 	Run      func(now time.Time) (string, error)
 }
 
@@ -93,9 +93,20 @@ func (s *Scheduler) runDue(now time.Time) {
 		if err != nil || cj == nil || !cj.Enabled {
 			continue
 		}
+		// Hourly jobs run at most once per hour (the tick itself may be faster).
+		if j.Schedule == "hourly" && cj.LastRunAt != nil && now.Sub(*cj.LastRunAt) < time.Hour {
+			continue
+		}
 		// Daily jobs run at most once per calendar day.
 		if j.Schedule == "daily" && cj.LastRunAt != nil && sameDay(*cj.LastRunAt, now) {
 			continue
+		}
+		// "daily@H" jobs run once per day, but never before hour H (local time) —
+		// e.g. "daily@19" sends the parents' evening report after 7 PM.
+		if h, ok := dailyAtHour(j.Schedule); ok {
+			if now.Hour() < h || (cj.LastRunAt != nil && sameDay(*cj.LastRunAt, now)) {
+				continue
+			}
 		}
 		// "everyNdays" jobs run at most once per N days (N*24h since the last run).
 		if days, ok := everyNDays(j.Schedule); ok && cj.LastRunAt != nil &&
@@ -123,6 +134,16 @@ func everyNDays(schedule string) (int, bool) {
 	var n int
 	if _, err := fmt.Sscanf(schedule, "every%ddays", &n); err == nil && n > 0 {
 		return n, true
+	}
+	return 0, false
+}
+
+// dailyAtHour parses a "daily@H" schedule (e.g. "daily@19") into H. Returns
+// (0, false) for any other schedule string.
+func dailyAtHour(schedule string) (int, bool) {
+	var h int
+	if _, err := fmt.Sscanf(schedule, "daily@%d", &h); err == nil && h >= 0 && h <= 23 {
+		return h, true
 	}
 	return 0, false
 }

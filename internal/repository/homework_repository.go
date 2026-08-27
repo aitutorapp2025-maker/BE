@@ -155,3 +155,131 @@ func (r *HomeworkRepository) ListForStudent(studentID uint) ([]model.Homework, e
 		Find(&out).Error
 	return out, err
 }
+
+// RescheduleTask moves one pending task's scheduled time (student-scoped via the
+// parent homework) and re-arms its reminder, then returns the refreshed homework.
+func (r *HomeworkRepository) RescheduleTask(taskID, studentID uint, at time.Time) (*model.Homework, error) {
+	var task model.HomeworkTask
+	err := r.db.
+		Joins("JOIN homeworks ON homeworks.id = homework_tasks.homework_id").
+		Where("homework_tasks.id = ? AND homeworks.student_id = ?", taskID, studentID).
+		First(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	// A time in the future re-arms the "time to study" reminder; a time already
+	// past stays quiet (no point pushing about it).
+	updates := map[string]any{"scheduled_at": at, "reminder_sent_at": nil}
+	if !at.After(time.Now()) {
+		updates["reminder_sent_at"] = time.Now()
+	}
+	if err := r.db.Model(&model.HomeworkTask{}).
+		Where("id = ?", task.ID).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	// Touch the homework so the change flows through delta sync to the app.
+	if err := r.db.Model(&model.Homework{}).Where("id = ?", task.HomeworkID).
+		Update("updated_at", time.Now()).Error; err != nil {
+		return nil, err
+	}
+	return r.GetForStudent(task.HomeworkID, studentID)
+}
+
+// DueTaskReminder is one "time to study" push waiting to be sent.
+type DueTaskReminder struct {
+	TaskID    uint
+	StudentID uint
+	TaskTitle string
+	Subject   string
+}
+
+// DueTaskReminders returns pending tasks whose scheduled time has arrived within
+// the last 30 minutes and whose reminder was not yet sent. The 30-minute floor
+// keeps a long FCM outage from flooding students with ancient reminders later.
+func (r *HomeworkRepository) DueTaskReminders(now time.Time) ([]DueTaskReminder, error) {
+	var out []DueTaskReminder
+	err := r.db.Model(&model.HomeworkTask{}).
+		Select("homework_tasks.id AS task_id, homeworks.student_id, homework_tasks.title AS task_title, homeworks.subject").
+		Joins("JOIN homeworks ON homeworks.id = homework_tasks.homework_id").
+		Where("homework_tasks.status = 'pending'").
+		Where("homework_tasks.reminder_sent_at IS NULL").
+		Where("homework_tasks.scheduled_at IS NOT NULL AND homework_tasks.scheduled_at <= ? AND homework_tasks.scheduled_at > ?",
+			now, now.Add(-30*time.Minute)).
+		Where("homeworks.status <> 'done'").
+		Limit(500).
+		Scan(&out).Error
+	return out, err
+}
+
+// MarkRemindersSent stamps reminder_sent_at so the same task is never pushed twice.
+func (r *HomeworkRepository) MarkRemindersSent(taskIDs []uint, now time.Time) error {
+	if len(taskIDs) == 0 {
+		return nil
+	}
+	return r.db.Model(&model.HomeworkTask{}).
+		Where("id IN ?", taskIDs).
+		Update("reminder_sent_at", now).Error
+}
+
+// DailySummary is one student's activity for a day — the basis of the parents'
+// evening WhatsApp report.
+type DailySummary struct {
+	StudentID  uint
+	TasksDone  int
+	TestsTaken int
+	Score      int
+	MaxScore   int
+}
+
+// DailySummaries aggregates every student's activity in [from, to): homework
+// tasks marked done and tests taken (with their combined score). Students with
+// no activity in the window simply have no entry.
+func (r *HomeworkRepository) DailySummaries(from, to time.Time) (map[uint]*DailySummary, error) {
+	out := map[uint]*DailySummary{}
+	get := func(id uint) *DailySummary {
+		if s, ok := out[id]; ok {
+			return s
+		}
+		s := &DailySummary{StudentID: id}
+		out[id] = s
+		return s
+	}
+
+	var tasks []struct {
+		StudentID uint
+		N         int
+	}
+	if err := r.db.Model(&model.HomeworkTask{}).
+		Select("homeworks.student_id, COUNT(*) AS n").
+		Joins("JOIN homeworks ON homeworks.id = homework_tasks.homework_id").
+		Where("homework_tasks.status = 'done' AND homework_tasks.updated_at >= ? AND homework_tasks.updated_at < ?", from, to).
+		Group("homeworks.student_id").
+		Scan(&tasks).Error; err != nil {
+		return nil, err
+	}
+	for _, t := range tasks {
+		get(t.StudentID).TasksDone = t.N
+	}
+
+	var tests []struct {
+		StudentID uint
+		N         int
+		Score     int
+		MaxScore  int
+	}
+	if err := r.db.Model(&model.HomeworkTest{}).
+		Select("student_id, COUNT(*) AS n, COALESCE(SUM(score),0) AS score, COALESCE(SUM(max_score),0) AS max_score").
+		Where("created_at >= ? AND created_at < ?", from, to).
+		Group("student_id").
+		Scan(&tests).Error; err != nil {
+		return nil, err
+	}
+	for _, t := range tests {
+		s := get(t.StudentID)
+		s.TestsTaken, s.Score, s.MaxScore = t.N, t.Score, t.MaxScore
+	}
+	return out, nil
+}

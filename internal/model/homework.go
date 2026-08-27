@@ -43,6 +43,13 @@ type HomeworkTask struct {
 	// Not serialized to the client (the teach endpoint returns it explicitly).
 	Lesson string `gorm:"type:text" json:"-"`
 	Status string `gorm:"size:20;not null;default:pending" json:"status"` // pending | done
+	// ScheduledAt is when the student should start this task. A default
+	// timetable is chained at upload (task after task); the student can move any
+	// task's time from the app, and a push reminder fires when the time arrives.
+	ScheduledAt *time.Time `json:"scheduled_at"`
+	// ReminderSentAt marks the "time to study" push as sent (nil = not yet), so
+	// the minutely reminder job never notifies the same task twice.
+	ReminderSentAt *time.Time `json:"-"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }

@@ -284,10 +284,39 @@ func (s *HomeworkService) CreateFromImage(ctx context.Context, studentID uint, i
 	if len(hw.Tasks) == 0 {
 		return nil, fmt.Errorf("the AI could not break this homework into tasks — try a clearer photo")
 	}
+	// Default timetable: the first task starts now (the student has the app
+	// open, so its reminder is pre-marked sent); each next task is chained after
+	// the previous one's duration plus a short break. The student can move any
+	// task's time from the app, which re-arms that task's push reminder.
+	now := time.Now()
+	start := now
+	for i := range hw.Tasks {
+		at := start
+		hw.Tasks[i].ScheduledAt = &at
+		if i == 0 {
+			sent := now
+			hw.Tasks[i].ReminderSentAt = &sent
+		}
+		start = start.Add(time.Duration(hw.Tasks[i].DurationMin+5) * time.Minute)
+	}
 	if err := s.homeworks.Create(hw); err != nil {
 		return nil, fmt.Errorf("save homework: %w", err)
 	}
 	return hw, nil
+}
+
+// RescheduleTask moves one task's study time (the student picked a new time in
+// the app). The time must be within a sane window: not more than a few minutes
+// in the past, and at most 30 days ahead.
+func (s *HomeworkService) RescheduleTask(studentID, taskID uint, at time.Time) (*model.Homework, error) {
+	now := time.Now()
+	if at.Before(now.Add(-10 * time.Minute)) {
+		return nil, fmt.Errorf("please pick a time that is not in the past")
+	}
+	if at.After(now.Add(30 * 24 * time.Hour)) {
+		return nil, fmt.Errorf("please pick a time within the next 30 days")
+	}
+	return s.homeworks.RescheduleTask(taskID, studentID, at)
 }
 
 // List returns the student's homeworks (newest first).

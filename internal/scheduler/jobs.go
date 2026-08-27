@@ -9,6 +9,7 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/fcm"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/wa"
 	"gorm.io/gorm"
 )
 
@@ -174,6 +175,137 @@ func SyncFirebaseStatsJob(stats *service.FirebaseStatsService) Job {
 			return stats.Sync(context.Background(), 3)
 		},
 	}
+}
+
+// TaskRemindersJob sends the "time to study" push when a homework task's
+// scheduled time arrives. Runs every scheduler tick (minutely) so reminders
+// land close to the time the student picked; each task is pushed at most once
+// (reminder_sent_at) and stale reminders (>30 min old) are never sent.
+func TaskRemindersJob(
+	homeworks *repository.HomeworkRepository,
+	devices *repository.DeviceTokenRepository,
+	push fcm.Pusher,
+) Job {
+	return Job{
+		Key:      "homework_task_reminders",
+		Schedule: "minutely",
+		Run: func(now time.Time) (string, error) {
+			due, err := homeworks.DueTaskReminders(now)
+			if err != nil {
+				return "", err
+			}
+			if len(due) == 0 {
+				return "0 due", nil
+			}
+			if !push.Enabled() {
+				return fmt.Sprintf("%d due but FCM not configured (0 sent)", len(due)), nil
+			}
+			sent := 0
+			done := make([]uint, 0, len(due))
+			for _, d := range due {
+				// Mark first regardless of delivery — a broken token must never
+				// make the same reminder retry every minute.
+				done = append(done, d.TaskID)
+				tokens, terr := devices.TokensForStudent(d.StudentID)
+				if terr != nil || len(tokens) == 0 {
+					continue
+				}
+				body := fmt.Sprintf("It's time for: %s", d.TaskTitle)
+				if s := d.Subject; s != "" {
+					body = fmt.Sprintf("It's time for: %s (%s)", d.TaskTitle, s)
+				}
+				n, invalid, _ := push.SendToTokens(context.Background(), tokens,
+					"Time to study 📚", body, "",
+					map[string]string{"type": "task_reminder"})
+				if len(invalid) > 0 {
+					_ = devices.DeleteTokens(invalid)
+				}
+				if n > 0 {
+					sent++
+				}
+			}
+			if err := homeworks.MarkRemindersSent(done, now); err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("reminded %d of %d due", sent, len(due)), nil
+		},
+	}
+}
+
+// ParentDailyReportJob WhatsApps each parent their child's study report for the
+// day — tasks completed, tests taken and the day's score. Runs once per day
+// after 7 PM ("daily@19"). The cron only composes + enqueues on RabbitMQ; the
+// WhatsApp worker delivers in the background (same pattern as email/SMS/push).
+// Students with no activity that day (or no phone on file) are skipped, and the
+// whole job no-ops until WhatsApp is configured in admin Settings.
+func ParentDailyReportJob(
+	homeworks *repository.HomeworkRepository,
+	students *repository.StudentRepository,
+	waPub *wa.Publisher,
+) Job {
+	return Job{
+		Key:      "parent_daily_reports",
+		Schedule: "daily@19",
+		Run: func(now time.Time) (string, error) {
+			if !waPub.Enabled() {
+				return "WhatsApp not configured (0 sent)", nil
+			}
+			from := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+			summaries, err := homeworks.DailySummaries(from, now)
+			if err != nil {
+				return "", err
+			}
+			if len(summaries) == 0 {
+				return "no student activity today (0 sent)", nil
+			}
+			queued, skipped := 0, 0
+			for id, sum := range summaries {
+				st, serr := students.FindByID(id)
+				if serr != nil || st == nil {
+					skipped++
+					continue
+				}
+				phone := st.ParentPhone
+				if phone == "" {
+					phone = st.Phone // fall back so the family still gets the report
+				}
+				if phone == "" {
+					skipped++
+					continue
+				}
+				if err := waPub.Enqueue(wa.Job{Phone: phone, Text: composeParentReport(st.Name, now, sum)}); err != nil {
+					return "", err
+				}
+				queued++
+			}
+			return fmt.Sprintf("queued %d report(s), skipped %d, %d student(s) active", queued, skipped, len(summaries)), nil
+		},
+	}
+}
+
+// composeParentReport writes the parent-facing daily summary.
+func composeParentReport(name string, day time.Time, s *repository.DailySummary) string {
+	if name == "" {
+		name = "Your child"
+	}
+	msg := fmt.Sprintf("📚 Vaha AI daily report — %s (%s)\n", name, day.Format("02 Jan 2006"))
+	msg += fmt.Sprintf("✅ Tasks completed: %d\n", s.TasksDone)
+	msg += fmt.Sprintf("📝 Tests taken: %d\n", s.TestsTaken)
+	if s.MaxScore > 0 {
+		pct := (s.Score*100 + s.MaxScore/2) / s.MaxScore
+		msg += fmt.Sprintf("🏆 Today's score: %d/%d (%d%%)\n", s.Score, s.MaxScore, pct)
+		switch {
+		case pct >= 80:
+			msg += "Excellent work today — please appreciate them! 🌟"
+		case pct >= 50:
+			msg += "Good progress today — a little more practice will help. 👍"
+		default:
+			msg += "They tried today — extra revision together will help a lot. 💪"
+		}
+	} else {
+		msg += "Keep encouraging them to take the daily tests. 💪"
+	}
+	return msg
 }
 
 // daysUntil is the calendar-day difference (t's date − now's date), so a trial

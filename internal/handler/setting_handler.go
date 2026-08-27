@@ -81,6 +81,13 @@ type settingRequest struct {
 	SmsExpertRoute    string `json:"smsexpert_route"`
 	SmsExpertType     string `json:"smsexpert_type"`
 
+	// WhatsApp (parents' daily report). Token is write-only: empty keeps it.
+	WhatsappEnabled      bool   `json:"whatsapp_enabled"`
+	WhatsappToken        string `json:"whatsapp_token"`
+	WhatsappPhoneID      string `json:"whatsapp_phone_id"`
+	WhatsappTemplate     string `json:"whatsapp_template"`
+	WhatsappTemplateLang string `json:"whatsapp_template_lang"`
+
 	// CAPTCHA. Secret is write-only.
 	CaptchaEnabled  bool   `json:"captcha_enabled"`
 	CaptchaProvider string `json:"captcha_provider"`
@@ -246,6 +253,7 @@ func (h *SettingHandler) Get(c *fiber.Ctx) error {
 	s.RazorpayTestSecretSet = s.RazorpayTestKeySecret != ""
 	s.RazorpayTestWebhookSet = s.RazorpayTestWebhookSecret != ""
 	s.FcmConfigured = s.FcmServiceAccount != ""
+	s.WhatsappTokenSet = s.WhatsappToken != ""
 	return c.JSON(fiber.Map{"success": true, "settings": s})
 }
 
@@ -326,6 +334,15 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.SmsExpertType = strings.TrimSpace(req.SmsExpertType)
 	if strings.TrimSpace(req.SmsExpertPassword) != "" {
 		s.SmsExpertPassword = req.SmsExpertPassword
+	}
+
+	// WhatsApp (parents' daily report). Token is write-only.
+	s.WhatsappEnabled = req.WhatsappEnabled
+	s.WhatsappPhoneID = strings.TrimSpace(req.WhatsappPhoneID)
+	s.WhatsappTemplate = strings.TrimSpace(req.WhatsappTemplate)
+	s.WhatsappTemplateLang = strings.TrimSpace(req.WhatsappTemplateLang)
+	if strings.TrimSpace(req.WhatsappToken) != "" {
+		s.WhatsappToken = strings.TrimSpace(req.WhatsappToken)
 	}
 
 	// CAPTCHA.
@@ -424,6 +441,7 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.RazorpayTestSecretSet = s.RazorpayTestKeySecret != ""
 	s.RazorpayTestWebhookSet = s.RazorpayTestWebhookSecret != ""
 	s.FcmConfigured = s.FcmServiceAccount != ""
+	s.WhatsappTokenSet = s.WhatsappToken != ""
 	return c.JSON(fiber.Map{"success": true, "settings": s})
 }
 
