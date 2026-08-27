@@ -82,6 +82,29 @@ func geminiReq(cfg config.AIConfig, system string, user []geminiPart, maxTokens 
 	return req
 }
 
+// TranscribeAudio turns a student's voice note into text using Gemini's audio
+// understanding (Claude has no audio input, so this runs on the Gemini key
+// whenever one is configured — regardless of which provider answers the
+// tutor). langHint biases the transcription ("Tamil", "English", ...).
+func (c *Chat) TranscribeAudio(ctx context.Context, audioB64, mimeType, langHint string) (string, error) {
+	if c.cfg().GeminiKey == "" {
+		return "", fmt.Errorf("voice transcription needs the Gemini API key — add it in admin Settings → AI Tutor")
+	}
+	prompt := "Transcribe this audio EXACTLY as spoken, in the original spoken language. " +
+		"Return ONLY the transcription text — no labels, no translation, no commentary."
+	if strings.TrimSpace(langHint) != "" {
+		prompt += " The speaker is most likely speaking " + strings.TrimSpace(langHint) + "."
+	}
+	out, err := c.sendGemini(ctx, "", []geminiPart{
+		{InlineData: &geminiInlineData{MimeType: mimeType, Data: audioB64}},
+		{Text: prompt},
+	}, 1500)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // sendGemini performs one non-streaming generateContent call.
 func (c *Chat) sendGemini(ctx context.Context, system string, user []geminiPart, maxTokens int) (string, error) {
 	cfg := c.cfg()

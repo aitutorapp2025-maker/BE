@@ -1,23 +1,112 @@
 package handler
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/ai"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/gofiber/fiber/v2"
 )
 
 // ChatHistoryHandler stores + serves the signed-in student's AI-tutor chat so
-// it syncs across devices and survives a reinstall.
+// it syncs across devices and survives a reinstall. It also receives voice
+// notes: the audio file is stored (played back WhatsApp-style in the chat)
+// and transcribed via Gemini.
 type ChatHistoryHandler struct {
-	chats *repository.ChatMessageRepository
+	chats      *repository.ChatMessageRepository
+	ai         *ai.Chat
+	uploadsDir string
+	publicBase string
 }
 
-// NewChatHistoryHandler builds a ChatHistoryHandler.
-func NewChatHistoryHandler(chats *repository.ChatMessageRepository) *ChatHistoryHandler {
-	return &ChatHistoryHandler{chats: chats}
+// NewChatHistoryHandler builds a ChatHistoryHandler. aiChat powers voice-note
+// transcription; uploadsDir/publicBase place + address the stored audio.
+func NewChatHistoryHandler(chats *repository.ChatMessageRepository, aiChat *ai.Chat, uploadsDir, publicBase string) *ChatHistoryHandler {
+	return &ChatHistoryHandler{
+		chats: chats, ai: aiChat, uploadsDir: uploadsDir, publicBase: publicBase,
+	}
+}
+
+// allowedVoiceTypes is the voice-note upload whitelist.
+var allowedVoiceTypes = map[string]string{
+	"audio/mp4":  ".m4a",
+	"audio/aac":  ".m4a",
+	"audio/mpeg": ".mp3",
+	"audio/ogg":  ".ogg",
+	"audio/wav":  ".wav",
+}
+
+// maxVoiceBytes caps a decoded voice note (~2 min of AAC is well under this).
+const maxVoiceBytes = 8 << 20 // 8 MB
+
+// Voice accepts a recorded voice note: stores the audio (so the student can
+// replay it in the chat, on any device) and transcribes it in the spoken
+// language. POST /api/v1/student/chat/voice  (signed + encrypted)
+func (h *ChatHistoryHandler) Voice(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	var req struct {
+		Audio     string `json:"audio"`      // base64
+		MediaType string `json:"media_type"` // audio/mp4 etc.
+		Language  string `json:"language"`   // hint, e.g. "tamil"
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	mt := strings.ToLower(strings.TrimSpace(req.MediaType))
+	ext, ok := allowedVoiceTypes[mt]
+	if !ok {
+		return fiber.NewError(fiber.StatusUnsupportedMediaType, "unsupported audio type")
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.Audio))
+	if err != nil || len(raw) == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid audio data")
+	}
+	if len(raw) > maxVoiceBytes {
+		return fiber.NewError(fiber.StatusRequestEntityTooLarge,
+			"that recording is too long — please keep it under 2 minutes")
+	}
+
+	// Store under an unguessable random name (capability URL).
+	rnd := make([]byte, 16)
+	if _, err := rand.Read(rnd); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to store the recording")
+	}
+	dir := filepath.Join(h.uploadsDir, "voice")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to store the recording")
+	}
+	name := "v" + hex.EncodeToString(rnd) + ext
+	if err := os.WriteFile(filepath.Join(dir, name), raw, 0o644); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to store the recording")
+	}
+	base := strings.TrimRight(h.publicBase, "/")
+	if base == "" {
+		base = strings.TrimRight(c.BaseURL(), "/")
+	}
+	url := base + "/uploads/voice/" + name
+
+	// Transcribe in the spoken language (Gemini audio understanding).
+	transcript, terr := h.ai.TranscribeAudio(c.Context(),
+		base64.StdEncoding.EncodeToString(raw), mt, strings.TrimSpace(req.Language))
+	if terr != nil {
+		return fiber.NewError(fiber.StatusBadGateway,
+			"could not understand the recording: "+terr.Error())
+	}
+	if strings.TrimSpace(transcript) == "" {
+		return fiber.NewError(fiber.StatusBadGateway,
+			"could not hear anything in the recording — please try again")
+	}
+	return c.JSON(fiber.Map{"success": true, "url": url, "transcript": transcript})
 }
 
 // List returns the student's conversation, oldest first. The optional ?conv=
@@ -76,7 +165,7 @@ func (h *ChatHistoryHandler) Sync(c *fiber.Ctx) error {
 		}
 		kind := strings.ToLower(strings.TrimSpace(m.Kind))
 		switch kind {
-		case "image", "pdf":
+		case "image", "pdf", "voice":
 			// keep
 		default:
 			kind = "text"

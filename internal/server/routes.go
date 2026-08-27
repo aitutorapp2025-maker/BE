@@ -121,7 +121,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	referralHandler := handler.NewReferralHandler(referralService, referralRepo)
 	studentAuthHandler := handler.NewStudentAuthHandler(studentAuthService, classGroupRepo, autopayEnabled, referralService, d.Payments, service.ProfilePasswordProvider(settingRepo))
 	tutorHandler := handler.NewTutorHandler(tutorService, studentRepo, creditService, autopayEnabled)
-	chatHistoryHandler := handler.NewChatHistoryHandler(repository.NewChatMessageRepository(d.DB))
+	chatHistoryHandler := handler.NewChatHistoryHandler(
+		repository.NewChatMessageRepository(d.DB), chatClient,
+		d.Cfg.Uploads.Dir, d.Cfg.Uploads.PublicBaseURL)
 	// Background push publisher (RabbitMQ) — shared by the support handler (notify
 	// the student on an admin response) and the admin notification broadcast.
 	pushPublisher := fcm.NewPublisher(d.MQ, func() bool { return d.Push.Enabled() })
@@ -277,6 +279,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// AI-tutor chat history — synced across devices (stored in Postgres).
 	studentProtected.Get("/chat", chatHistoryHandler.List)
 	studentProtected.Post("/chat/sync", chatHistoryHandler.Sync)
+	// Voice notes: store the audio + transcribe it (WhatsApp-style chat).
+	studentProtected.Post("/chat/voice", chatHistoryHandler.Voice)
 	// Multi-chat: named conversation threads (New chat / history / rename).
 	studentProtected.Get("/chat/conversations", chatHistoryHandler.Conversations)
 	studentProtected.Post("/chat/conversations/sync", chatHistoryHandler.SyncConversations)
