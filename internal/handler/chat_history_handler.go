@@ -95,18 +95,17 @@ func (h *ChatHistoryHandler) Voice(c *fiber.Ctx) error {
 	}
 	url := base + "/uploads/voice/" + name
 
-	// Transcribe in the spoken language (Gemini audio understanding).
+	// Transcribe in the spoken language (Gemini audio understanding). A
+	// transcription failure must NOT lose the voice note — the audio is
+	// already stored, so return the URL with the error; the app shows the
+	// playable message and explains why there's no text.
 	transcript, terr := h.ai.TranscribeAudio(c.Context(),
 		base64.StdEncoding.EncodeToString(raw), mt, strings.TrimSpace(req.Language))
+	resp := fiber.Map{"success": true, "url": url, "transcript": strings.TrimSpace(transcript)}
 	if terr != nil {
-		return fiber.NewError(fiber.StatusBadGateway,
-			"could not understand the recording: "+terr.Error())
+		resp["transcribe_error"] = terr.Error()
 	}
-	if strings.TrimSpace(transcript) == "" {
-		return fiber.NewError(fiber.StatusBadGateway,
-			"could not hear anything in the recording — please try again")
-	}
-	return c.JSON(fiber.Map{"success": true, "url": url, "transcript": transcript})
+	return c.JSON(resp)
 }
 
 // List returns the student's conversation, oldest first. The optional ?conv=
