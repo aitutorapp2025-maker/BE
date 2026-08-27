@@ -130,19 +130,28 @@ func (r *ChatMessageRepository) DeleteConversation(studentID uint, convID string
 }
 
 // UpsertBatch inserts messages; a row that already exists (student_id,
-// client_id) is left as-is EXCEPT its thumbnail, which is backfilled when the
-// stored one is empty — so a device that still holds the local image thumbs
-// can donate them to rows synced before thumbnails existed. Idempotent.
+// client_id) keeps its content EXCEPT fields that are backfilled when the
+// stored value is empty: thumb, image_url, homework_id and text. This lets the
+// app push an attachment message IMMEDIATELY (so it can never be lost) and
+// patch in the server URL / transcript / homework link afterwards. Idempotent.
 func (r *ChatMessageRepository) UpsertBatch(msgs []model.ChatMessage) error {
 	if len(msgs) == 0 {
 		return nil
 	}
+	fill := func(col string) any {
+		return gorm.Expr(
+			"CASE WHEN chat_messages." + col + " = '' OR chat_messages." + col +
+				" IS NULL THEN excluded." + col + " ELSE chat_messages." + col + " END")
+	}
 	return r.db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "student_id"}, {Name: "client_id"}},
 		DoUpdates: clause.Assignments(map[string]any{
-			"thumb": gorm.Expr(
-				"CASE WHEN chat_messages.thumb = '' OR chat_messages.thumb IS NULL " +
-					"THEN excluded.thumb ELSE chat_messages.thumb END"),
+			"thumb":     fill("thumb"),
+			"image_url": fill("image_url"),
+			"text":      fill("text"),
+			"homework_id": gorm.Expr(
+				"CASE WHEN chat_messages.homework_id = 0 OR chat_messages.homework_id IS NULL " +
+					"THEN excluded.homework_id ELSE chat_messages.homework_id END"),
 		}),
 	}).CreateInBatches(msgs, 100).Error
 }
