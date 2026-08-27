@@ -215,7 +215,9 @@ type aiHomework struct {
 
 // CreateFromImage saves the homework image, asks Claude vision to read it and
 // split it into ~5 tasks, persists everything and returns the stored homework.
-func (s *HomeworkService) CreateFromImage(ctx context.Context, studentID uint, imageBytes []byte, mediaType string) (*model.Homework, error) {
+// note is the student's own words about the homework (typed, or spoken and
+// transcribed on-device) — folded into the prompt so it shapes the task plan.
+func (s *HomeworkService) CreateFromImage(ctx context.Context, studentID uint, imageBytes []byte, mediaType, note string) (*model.Homework, error) {
 	if len(imageBytes) == 0 {
 		return nil, fmt.Errorf("no image provided")
 	}
@@ -234,6 +236,16 @@ func (s *HomeworkService) CreateFromImage(ctx context.Context, studentID uint, i
 		"the student should learn it. Reply with STRICT JSON only — no markdown, no " +
 		"prose outside the JSON."
 	ctxLine := profileLine(st)
+	// The student's own words (typed or spoken) about this homework — e.g.
+	// "focus on question 3, I don't understand fractions" — shape the plan.
+	if n := strings.TrimSpace(note); n != "" {
+		if len(n) > 1000 {
+			n = n[:1000]
+		}
+		ctxLine += "\n\nThe student sent this message with the homework (typed or " +
+			"spoken aloud): \"" + n + "\". Take it into account when reading the " +
+			"homework and planning the tasks."
+	}
 	prompt := ctxLine + "\n\nRead this homework image and return JSON with this exact shape:\n" +
 		"{\n" +
 		`  "subject": "the subject, e.g. Science",` + "\n" +

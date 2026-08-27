@@ -114,6 +114,9 @@ func (h *HomeworkHandler) rateLimitUpload(ctx context.Context, studentID uint) e
 type uploadHomeworkRequest struct {
 	Image     string `json:"image"`      // base64-encoded image bytes (no data: prefix)
 	MediaType string `json:"media_type"` // image/jpeg | image/png | application/pdf
+	// Note is what the student typed or SPOKE (dictated on-device) about the
+	// homework — the AI takes it into account when planning the tasks.
+	Note string `json:"note"`
 }
 
 // Upload accepts a homework image, has the AI read + split it, and returns the
@@ -146,7 +149,7 @@ func (h *HomeworkHandler) Upload(c *fiber.Ctx) error {
 	if err := h.requireCredits(studentID, service.ActionHomeworkRead); err != nil {
 		return err
 	}
-	hw, err := h.hw.CreateFromImage(c.Context(), studentID, bytes, req.MediaType)
+	hw, err := h.hw.CreateFromImage(c.Context(), studentID, bytes, req.MediaType, req.Note)
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadGateway, "could not read the homework: "+err.Error())
 	}
