@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"errors"
+
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -26,10 +28,20 @@ const maxChatHistory = 200
 // ListByStudent returns the student's most recent messages (up to
 // maxChatHistory), oldest first for display. The DB fetch is newest-first with a
 // LIMIT (served by idx_chat_student_sent), then reversed in memory.
-func (r *ChatMessageRepository) ListByStudent(studentID uint) ([]model.ChatMessage, error) {
+// convID scopes to one conversation: "" = all (old app builds), "legacy" also
+// matches pre-multi-chat rows whose conv_id is ''.
+func (r *ChatMessageRepository) ListByStudent(studentID uint, convID string) ([]model.ChatMessage, error) {
+	q := r.db.Where("student_id = ?", studentID)
+	switch convID {
+	case "":
+		// all conversations (backward-compatible full history)
+	case "legacy":
+		q = q.Where("conv_id IN ('', 'legacy')")
+	default:
+		q = q.Where("conv_id = ?", convID)
+	}
 	var out []model.ChatMessage
-	err := r.db.
-		Where("student_id = ?", studentID).
+	err := q.
 		Order("sent_at DESC, id DESC").
 		Limit(maxChatHistory).
 		Find(&out).Error
@@ -41,6 +53,80 @@ func (r *ChatMessageRepository) ListByStudent(studentID uint) ([]model.ChatMessa
 		out[i], out[j] = out[j], out[i]
 	}
 	return out, nil
+}
+
+// ListConversations returns the student's chat threads, most recent first.
+func (r *ChatMessageRepository) ListConversations(studentID uint) ([]model.ChatConversation, error) {
+	var out []model.ChatConversation
+	err := r.db.
+		Where("student_id = ?", studentID).
+		Order("last_at DESC, id DESC").
+		Limit(100).
+		Find(&out).Error
+	return out, err
+}
+
+// UpsertConversations merges the app's conversation registry: new threads are
+// inserted; existing ones take the incoming name/last_at — EXCEPT that a name
+// the student set by hand (Named=true) is never overwritten by an auto-name.
+func (r *ChatMessageRepository) UpsertConversations(studentID uint, convs []model.ChatConversation) error {
+	for _, in := range convs {
+		if in.ConvID == "" {
+			continue
+		}
+		var ex model.ChatConversation
+		err := r.db.Where("student_id = ? AND conv_id = ?", studentID, in.ConvID).First(&ex).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			in.ID = 0
+			in.StudentID = studentID
+			if cerr := r.db.Create(&in).Error; cerr != nil {
+				return cerr
+			}
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		updates := map[string]any{}
+		if in.LastAt.After(ex.LastAt) {
+			updates["last_at"] = in.LastAt
+		}
+		if in.Named || !ex.Named {
+			if in.Name != "" && in.Name != ex.Name {
+				updates["name"] = in.Name
+			}
+			if in.Named && !ex.Named {
+				updates["named"] = true
+			}
+		}
+		if len(updates) > 0 {
+			if uerr := r.db.Model(&model.ChatConversation{}).
+				Where("id = ?", ex.ID).Updates(updates).Error; uerr != nil {
+				return uerr
+			}
+		}
+	}
+	return nil
+}
+
+// DeleteConversation removes one thread and all its messages (student-scoped).
+// Deleting "legacy" also clears pre-multi-chat rows whose conv_id is ''.
+func (r *ChatMessageRepository) DeleteConversation(studentID uint, convID string) error {
+	if convID == "" {
+		return nil
+	}
+	msgQ := r.db.Where("student_id = ?", studentID)
+	if convID == "legacy" {
+		msgQ = msgQ.Where("conv_id IN ('', 'legacy')")
+	} else {
+		msgQ = msgQ.Where("conv_id = ?", convID)
+	}
+	if err := msgQ.Delete(&model.ChatMessage{}).Error; err != nil {
+		return err
+	}
+	return r.db.
+		Where("student_id = ? AND conv_id = ?", studentID, convID).
+		Delete(&model.ChatConversation{}).Error
 }
 
 // UpsertBatch inserts messages, ignoring any whose (student_id, client_id)

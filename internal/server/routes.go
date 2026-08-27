@@ -277,6 +277,10 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// AI-tutor chat history — synced across devices (stored in Postgres).
 	studentProtected.Get("/chat", chatHistoryHandler.List)
 	studentProtected.Post("/chat/sync", chatHistoryHandler.Sync)
+	// Multi-chat: named conversation threads (New chat / history / rename).
+	studentProtected.Get("/chat/conversations", chatHistoryHandler.Conversations)
+	studentProtected.Post("/chat/conversations/sync", chatHistoryHandler.SyncConversations)
+	studentProtected.Delete("/chat/conversations/:convId", chatHistoryHandler.DeleteConversation)
 	// Report a problem: file a ticket (+ optional attachment) and track it.
 	studentProtected.Post("/support", supportHandler.Create)
 	studentProtected.Get("/support", supportHandler.ListMine)
