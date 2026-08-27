@@ -280,6 +280,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Get("/chat", chatHistoryHandler.List)
 	studentProtected.Post("/chat/sync", chatHistoryHandler.Sync)
 	// Voice notes: store the audio + transcribe it (WhatsApp-style chat).
+	studentProtected.Post("/chat/file", chatHistoryHandler.File)
 	studentProtected.Post("/chat/voice", chatHistoryHandler.Voice)
 	// Multi-chat: named conversation threads (New chat / history / rename).
 	studentProtected.Get("/chat/conversations", chatHistoryHandler.Conversations)

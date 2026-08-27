@@ -46,6 +46,52 @@ var allowedVoiceTypes = map[string]string{
 // maxVoiceBytes caps a decoded voice note (~2 min of AAC is well under this).
 const maxVoiceBytes = 8 << 20 // 8 MB
 
+// File stores a chat attachment file (currently PDFs) so it can be viewed on
+// any device and after reinstalls — independent of whether the AI read of the
+// homework succeeds. POST /api/v1/student/chat/file  (signed + encrypted)
+func (h *ChatHistoryHandler) File(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	var req struct {
+		Data      string `json:"data"`       // base64
+		MediaType string `json:"media_type"` // application/pdf
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	if strings.ToLower(strings.TrimSpace(req.MediaType)) != "application/pdf" {
+		return fiber.NewError(fiber.StatusUnsupportedMediaType, "only PDF files are supported")
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.Data))
+	if err != nil || len(raw) == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid file data")
+	}
+	if len(raw) > 12<<20 {
+		return fiber.NewError(fiber.StatusRequestEntityTooLarge,
+			"that file is too large — it must be under 12 MB")
+	}
+	// Unguessable random name (capability URL), like voice notes.
+	rnd := make([]byte, 16)
+	if _, err := rand.Read(rnd); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to store the file")
+	}
+	dir := filepath.Join(h.uploadsDir, "chatfiles")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to store the file")
+	}
+	name := "f" + hex.EncodeToString(rnd) + ".pdf"
+	if err := os.WriteFile(filepath.Join(dir, name), raw, 0o644); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to store the file")
+	}
+	base := strings.TrimRight(h.publicBase, "/")
+	if base == "" {
+		base = strings.TrimRight(c.BaseURL(), "/")
+	}
+	return c.JSON(fiber.Map{"success": true, "url": base + "/uploads/chatfiles/" + name})
+}
+
 // Voice accepts a recorded voice note: stores the audio (so the student can
 // replay it in the chat, on any device) and transcribes it in the spoken
 // language. POST /api/v1/student/chat/voice  (signed + encrypted)
