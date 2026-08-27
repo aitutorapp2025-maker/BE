@@ -27,6 +27,16 @@ func AIProvider(settings *repository.SettingRepository, envFallback config.AICon
 		if m := strings.TrimSpace(s.AnthropicModel); m != "" {
 			out.AnthropicModel = m
 		}
+		// Answers provider (admin-selectable): claude | gemini.
+		if p := strings.TrimSpace(s.AnswersProvider); p != "" {
+			out.AnswersProvider = p
+		}
+		if k := strings.TrimSpace(s.GeminiAPIKey); k != "" {
+			out.GeminiKey = k
+		}
+		if m := strings.TrimSpace(s.GeminiModel); m != "" {
+			out.GeminiModel = m
+		}
 		if k := strings.TrimSpace(s.VoyageAPIKey); k != "" {
 			out.VoyageKey = k
 		}

@@ -75,7 +75,11 @@ type anthropicResponse struct {
 }
 
 // Complete sends a system prompt + user message and returns the model's text.
+// Routes to the admin-selected answers provider (Claude by default, or Gemini).
 func (c *Chat) Complete(ctx context.Context, system, user string) (string, error) {
+	if c.cfg().UseGemini() {
+		return c.sendGemini(ctx, system, []geminiPart{{Text: user}}, 1500)
+	}
 	return c.send(ctx, system, []anthropicMessage{{Role: "user", Content: user}}, 1500)
 }
 
@@ -97,6 +101,9 @@ type anthropicStreamEvent struct {
 // chunk as it arrives, and returns the full concatenated text once done.
 func (c *Chat) CompleteStream(ctx context.Context, system, user string, onDelta func(string)) (string, error) {
 	cfg := c.cfg()
+	if cfg.UseGemini() {
+		return c.streamGemini(ctx, system, user, onDelta)
+	}
 	if cfg.AnthropicKey == "" {
 		return "", fmt.Errorf("claude: no API key configured (set it in admin Settings)")
 	}
@@ -172,6 +179,13 @@ func (c *Chat) CompleteStream(ctx context.Context, system, user string, onDelta 
 func (c *Chat) CompleteVision(ctx context.Context, system, user, imageB64, mediaType string) (string, error) {
 	if mediaType == "" {
 		mediaType = "image/jpeg"
+	}
+	// Gemini takes images AND PDFs as inline_data parts.
+	if c.cfg().UseGemini() {
+		return c.sendGemini(ctx, system, []geminiPart{
+			{InlineData: &geminiInlineData{MimeType: mediaType, Data: imageB64}},
+			{Text: user},
+		}, 3000)
 	}
 	// PDFs go in a "document" block; images in an "image" block.
 	blockType := "image"

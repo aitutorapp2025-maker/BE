@@ -91,6 +91,9 @@ type settingRequest struct {
 	AIEnabled       bool   `json:"ai_enabled"`
 	AnthropicAPIKey string `json:"anthropic_api_key"`
 	AnthropicModel  string `json:"anthropic_model"`
+	AnswersProvider string `json:"answers_provider"` // claude | gemini
+	GeminiAPIKey    string `json:"gemini_api_key"`
+	GeminiModel     string `json:"gemini_model"`
 	VoyageAPIKey    string `json:"voyage_api_key"`
 	VoyageModel     string `json:"voyage_model"`
 	// Embeddings backend selection (voyage | local) + local endpoint.
@@ -236,6 +239,7 @@ func (h *SettingHandler) Get(c *fiber.Ctx) error {
 	s.SmsExpertPasswordSet = s.SmsExpertPassword != ""
 	s.CaptchaSecretSet = s.CaptchaSecret != ""
 	s.AnthropicKeySet = s.AnthropicAPIKey != ""
+	s.GeminiKeySet = s.GeminiAPIKey != ""
 	s.VoyageKeySet = s.VoyageAPIKey != ""
 	s.RazorpaySecretSet = s.RazorpayKeySecret != ""
 	s.RazorpayWebhookSet = s.RazorpayWebhookSecret != ""
@@ -339,6 +343,15 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	if m := strings.TrimSpace(req.AnthropicModel); m != "" {
 		s.AnthropicModel = m
 	}
+	if p := strings.TrimSpace(req.AnswersProvider); p == "claude" || p == "gemini" {
+		s.AnswersProvider = p
+	}
+	if k := strings.TrimSpace(req.GeminiAPIKey); k != "" {
+		s.GeminiAPIKey = k
+	}
+	if m := strings.TrimSpace(req.GeminiModel); m != "" {
+		s.GeminiModel = m
+	}
 	if m := strings.TrimSpace(req.VoyageModel); m != "" {
 		s.VoyageModel = m
 	}
@@ -404,6 +417,7 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.SmsExpertPasswordSet = s.SmsExpertPassword != ""
 	s.CaptchaSecretSet = s.CaptchaSecret != ""
 	s.AnthropicKeySet = s.AnthropicAPIKey != ""
+	s.GeminiKeySet = s.GeminiAPIKey != ""
 	s.VoyageKeySet = s.VoyageAPIKey != ""
 	s.RazorpaySecretSet = s.RazorpayKeySecret != ""
 	s.RazorpayWebhookSet = s.RazorpayWebhookSecret != ""

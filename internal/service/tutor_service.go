@@ -275,10 +275,12 @@ func (s *TutorService) AnswerDoubtStream(ctx context.Context, topic, question st
 // either provider rejects the request.
 func (s *TutorService) Probe(ctx context.Context) error {
 	if _, err := s.embedder.EmbedQuery(ctx, "test"); err != nil {
-		return fmt.Errorf("embeddings (Voyage): %w", err)
+		return fmt.Errorf("embeddings: %w", err)
 	}
+	// The Chat client routes to the admin-selected answers provider
+	// (Claude or Gemini), so this probes whichever one is active.
 	if _, err := s.chat.Complete(ctx, "You are a test.", "Reply with the single word OK."); err != nil {
-		return fmt.Errorf("answers (Claude): %w", err)
+		return fmt.Errorf("answers: %w", err)
 	}
 	return nil
 }

@@ -91,6 +91,11 @@ type Setting struct {
 	AIEnabled       bool   `gorm:"not null;default:false" json:"ai_enabled"`
 	AnthropicAPIKey string `gorm:"size:255" json:"-"`
 	AnthropicModel  string `gorm:"size:60" json:"anthropic_model"` // e.g. claude-sonnet-5
+	// Answers provider: "claude" (default) or "gemini" — who generates tutor
+	// answers. The Gemini key is write-only like the other provider keys.
+	AnswersProvider string `gorm:"size:20" json:"answers_provider"`
+	GeminiAPIKey    string `gorm:"size:255" json:"-"`
+	GeminiModel     string `gorm:"size:60" json:"gemini_model"` // e.g. gemini-2.5-flash-lite
 	VoyageAPIKey    string `gorm:"size:255" json:"-"`
 	VoyageModel     string `gorm:"size:60" json:"voyage_model"` // e.g. voyage-3
 	// Embeddings backend: "voyage" (cloud) or "local" (self-hosted BGE-M3 via an
@@ -182,6 +187,7 @@ type Setting struct {
 	SmsExpertPasswordSet bool `gorm:"-" json:"smsexpert_password_set"`
 	CaptchaSecretSet     bool `gorm:"-" json:"captcha_secret_set"`
 	AnthropicKeySet      bool `gorm:"-" json:"anthropic_key_set"`
+	GeminiKeySet         bool `gorm:"-" json:"gemini_key_set"`
 	VoyageKeySet         bool `gorm:"-" json:"voyage_key_set"`
 	RazorpaySecretSet    bool `gorm:"-" json:"razorpay_secret_set"`
 	RazorpayWebhookSet   bool `gorm:"-" json:"razorpay_webhook_set"`
