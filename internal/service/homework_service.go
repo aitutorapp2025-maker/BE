@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/ai"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/doctext"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/media"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
@@ -213,28 +214,73 @@ type aiHomework struct {
 	} `json:"tasks"`
 }
 
-// CreateFromImage saves the homework image, asks Claude vision to read it and
-// split it into ~5 tasks, persists everything and returns the stored homework.
-// note is the student's own words about the homework (typed, or spoken and
-// transcribed on-device) — folded into the prompt so it shapes the task plan.
+// HomeworkAttachment is one uploaded homework file: a photo/PDF (read by the
+// vision model) or a Word/PowerPoint/text document (text-extracted).
+type HomeworkAttachment struct {
+	Data      []byte
+	MediaType string
+}
+
+// CreateFromImage keeps the single-file path (older app builds) — it wraps
+// CreateFromAttachments.
 func (s *HomeworkService) CreateFromImage(ctx context.Context, studentID uint, imageBytes []byte, mediaType, note string) (*model.Homework, error) {
-	if len(imageBytes) == 0 {
-		return nil, fmt.Errorf("no image provided")
+	return s.CreateFromAttachments(ctx, studentID,
+		[]HomeworkAttachment{{Data: imageBytes, MediaType: mediaType}}, note)
+}
+
+// CreateFromAttachments saves the homework files, has the AI read ALL of them
+// together (multi-page photos + PDFs via vision; Word/PPT/text extracted to
+// text) and split the homework into tasks. note is the student's own words
+// (typed or spoken) — folded into the prompt so it shapes the task plan.
+func (s *HomeworkService) CreateFromAttachments(ctx context.Context, studentID uint, atts []HomeworkAttachment, note string) (*model.Homework, error) {
+	if len(atts) == 0 {
+		return nil, fmt.Errorf("no files provided")
 	}
 	st, err := s.students.FindByID(studentID)
 	if err != nil {
 		return nil, fmt.Errorf("student: %w", err)
 	}
 
-	imageURL, err := s.saveImage(imageBytes, mediaType, studentID)
-	if err != nil {
-		return nil, fmt.Errorf("save image: %w", err)
+	// Partition: photos/PDFs go to the vision model; documents become text.
+	var vision []ai.VisionAttachment
+	var docTexts []string
+	imageURL := ""
+	for _, a := range atts {
+		if len(a.Data) == 0 {
+			continue
+		}
+		mt := strings.ToLower(strings.TrimSpace(a.MediaType))
+		switch {
+		case mt == "image/jpeg" || mt == "image/jpg" || mt == "image/png" ||
+			mt == "application/pdf":
+			if mt == "image/jpg" {
+				mt = "image/jpeg"
+			}
+			vision = append(vision, ai.VisionAttachment{
+				B64: base64.StdEncoding.EncodeToString(a.Data), MediaType: mt})
+			if imageURL == "" {
+				if u, serr := s.saveImage(a.Data, mt, studentID); serr == nil {
+					imageURL = u
+				}
+			}
+		case doctext.Supported(mt):
+			text, derr := doctext.Extract(a.Data, mt)
+			if derr != nil {
+				return nil, derr
+			}
+			docTexts = append(docTexts, text)
+		default:
+			return nil, fmt.Errorf("unsupported file type — please upload JPG/PNG photos, PDF, Word (.docx), PowerPoint (.pptx) or text files")
+		}
+	}
+	if len(vision) == 0 && len(docTexts) == 0 {
+		return nil, fmt.Errorf("no readable files provided")
 	}
 
 	system := "You are Vaha AI, a friendly tutor for Indian school students. You are " +
-		"looking at a photo of a student's homework. Read it carefully and plan how " +
-		"the student should learn it. Reply with STRICT JSON only — no markdown, no " +
-		"prose outside the JSON."
+		"looking at a student's homework (photos, PDFs and/or document text). Read it " +
+		"carefully and plan how the student should learn it. Reply with STRICT JSON " +
+		"only — no markdown, no prose outside the JSON."
 	ctxLine := profileLine(st)
 	// The student's own words (typed or spoken) about this homework — e.g.
 	// "focus on question 3, I don't understand fractions" — shape the plan.
@@ -246,7 +292,10 @@ func (s *HomeworkService) CreateFromImage(ctx context.Context, studentID uint, i
 			"spoken aloud): \"" + n + "\". Take it into account when reading the " +
 			"homework and planning the tasks."
 	}
-	prompt := ctxLine + "\n\nRead this homework image and return JSON with this exact shape:\n" +
+	for i, t := range docTexts {
+		ctxLine += fmt.Sprintf("\n\nContent of uploaded document %d:\n%s", i+1, t)
+	}
+	prompt := ctxLine + "\n\nRead this homework (all pages/files together are ONE homework) and return JSON with this exact shape:\n" +
 		"{\n" +
 		`  "subject": "the subject, e.g. Science",` + "\n" +
 		`  "title": "a short homework title",` + "\n" +
@@ -259,7 +308,13 @@ func (s *HomeworkService) CreateFromImage(ctx context.Context, studentID uint, i
 		"duration_min: a realistic number of MINUTES (5–20) the student should spend on " +
 		"it. Return ONLY the JSON."
 
-	raw, err := s.chat.CompleteVision(ctx, system, prompt, base64.StdEncoding.EncodeToString(imageBytes), mediaType)
+	var raw string
+	if len(vision) > 0 {
+		raw, err = s.chat.CompleteVisionMulti(ctx, system, prompt, vision)
+	} else {
+		// Documents only (Word/PPT/text) — plain completion, no vision needed.
+		raw, err = s.chat.Complete(ctx, system, prompt)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("ai read homework: %w", err)
 	}

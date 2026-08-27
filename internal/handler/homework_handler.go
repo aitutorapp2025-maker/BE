@@ -111,13 +111,35 @@ func (h *HomeworkHandler) rateLimitUpload(ctx context.Context, studentID uint) e
 	return nil
 }
 
+type uploadAttachment struct {
+	Data      string `json:"data"`       // base64 bytes (no data: prefix)
+	MediaType string `json:"media_type"` // whitelisted below
+}
+
 type uploadHomeworkRequest struct {
-	Image     string `json:"image"`      // base64-encoded image bytes (no data: prefix)
+	Image     string `json:"image"`      // legacy single file (older app builds)
 	MediaType string `json:"media_type"` // image/jpeg | image/png | application/pdf
+	// Attachments is the multi-file form: several homework pages/documents that
+	// together are ONE homework (photos, PDFs, Word/PPT/text).
+	Attachments []uploadAttachment `json:"attachments"`
 	// Note is what the student typed or SPOKE (dictated on-device) about the
 	// homework — the AI takes it into account when planning the tasks.
 	Note string `json:"note"`
 }
+
+// allowedHomeworkTypes is the upload whitelist: photos, PDF, Word (.docx),
+// PowerPoint (.pptx) and plain text.
+var allowedHomeworkTypes = map[string]bool{
+	"image/jpeg":      true,
+	"image/jpg":       true,
+	"image/png":       true,
+	"application/pdf": true,
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document":   true,
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation": true,
+	"text/plain": true,
+}
+
+const maxHomeworkFiles = 6
 
 // Upload accepts a homework image, has the AI read + split it, and returns the
 // stored homework with its tasks.
@@ -131,17 +153,45 @@ func (h *HomeworkHandler) Upload(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 	}
-	// Tolerate a data URL prefix if the client sent one.
-	if i := strings.Index(req.Image, ","); strings.HasPrefix(req.Image, "data:") && i > 0 {
-		req.Image = req.Image[i+1:]
+	// Collect files: the multi-file form, or the legacy single-image form.
+	raws := req.Attachments
+	if len(raws) == 0 && strings.TrimSpace(req.Image) != "" {
+		raws = []uploadAttachment{{Data: req.Image, MediaType: req.MediaType}}
 	}
-	bytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.Image))
-	if err != nil || len(bytes) == 0 {
-		return fiber.NewError(fiber.StatusBadRequest, "invalid image data")
+	if len(raws) == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "no files provided")
 	}
-	if len(bytes) > maxHomeworkBytes {
-		return fiber.NewError(fiber.StatusRequestEntityTooLarge,
-			"that image is too large — please use a smaller photo")
+	if len(raws) > maxHomeworkFiles {
+		return fiber.NewError(fiber.StatusBadRequest,
+			fmt.Sprintf("too many files — please upload at most %d per homework", maxHomeworkFiles))
+	}
+	atts := make([]service.HomeworkAttachment, 0, len(raws))
+	total := 0
+	for _, a := range raws {
+		mt := strings.ToLower(strings.TrimSpace(a.MediaType))
+		if !allowedHomeworkTypes[mt] {
+			return fiber.NewError(fiber.StatusUnsupportedMediaType,
+				"unsupported file type — allowed: JPG/PNG photos, PDF, Word (.docx), PowerPoint (.pptx) and text files")
+		}
+		// Tolerate a data URL prefix if the client sent one.
+		data := a.Data
+		if i := strings.Index(data, ","); strings.HasPrefix(data, "data:") && i > 0 {
+			data = data[i+1:]
+		}
+		bytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(data))
+		if err != nil || len(bytes) == 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "one of the files is not readable")
+		}
+		if len(bytes) > maxHomeworkBytes {
+			return fiber.NewError(fiber.StatusRequestEntityTooLarge,
+				"one file is too large — each file must be under 12 MB")
+		}
+		total += len(bytes)
+		if total > 2*maxHomeworkBytes {
+			return fiber.NewError(fiber.StatusRequestEntityTooLarge,
+				"the files together are too large — please upload fewer or smaller files")
+		}
+		atts = append(atts, service.HomeworkAttachment{Data: bytes, MediaType: mt})
 	}
 	if err := h.rateLimitUpload(c.Context(), studentID); err != nil {
 		return err
@@ -149,7 +199,7 @@ func (h *HomeworkHandler) Upload(c *fiber.Ctx) error {
 	if err := h.requireCredits(studentID, service.ActionHomeworkRead); err != nil {
 		return err
 	}
-	hw, err := h.hw.CreateFromImage(c.Context(), studentID, bytes, req.MediaType, req.Note)
+	hw, err := h.hw.CreateFromAttachments(c.Context(), studentID, atts, req.Note)
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadGateway, "could not read the homework: "+err.Error())
 	}

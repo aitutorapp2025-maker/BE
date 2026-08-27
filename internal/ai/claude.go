@@ -177,28 +177,52 @@ func (c *Chat) CompleteStream(ctx context.Context, system, user string, onDelta 
 // of the image bytes; [mediaType] is e.g. "image/jpeg" or "image/png". Used to
 // read a homework photo and (with a JSON-returning prompt) split it into tasks.
 func (c *Chat) CompleteVision(ctx context.Context, system, user, imageB64, mediaType string) (string, error) {
-	if mediaType == "" {
-		mediaType = "image/jpeg"
-	}
+	return c.CompleteVisionMulti(ctx, system, user,
+		[]VisionAttachment{{B64: imageB64, MediaType: mediaType}})
+}
+
+// VisionAttachment is one image or PDF sent along with a vision prompt (a
+// multi-page homework is several attachments in one call).
+type VisionAttachment struct {
+	B64       string
+	MediaType string // image/jpeg | image/png | application/pdf
+}
+
+// CompleteVisionMulti sends a user turn containing several images/PDFs plus
+// the text prompt — the model sees all pages of a homework at once.
+func (c *Chat) CompleteVisionMulti(ctx context.Context, system, user string, atts []VisionAttachment) (string, error) {
 	// Gemini takes images AND PDFs as inline_data parts.
 	if c.cfg().UseGemini() {
-		return c.sendGemini(ctx, system, []geminiPart{
-			{InlineData: &geminiInlineData{MimeType: mediaType, Data: imageB64}},
-			{Text: user},
-		}, 3000)
+		parts := make([]geminiPart, 0, len(atts)+1)
+		for _, a := range atts {
+			mt := a.MediaType
+			if mt == "" {
+				mt = "image/jpeg"
+			}
+			parts = append(parts,
+				geminiPart{InlineData: &geminiInlineData{MimeType: mt, Data: a.B64}})
+		}
+		parts = append(parts, geminiPart{Text: user})
+		return c.sendGemini(ctx, system, parts, 3000)
 	}
-	// PDFs go in a "document" block; images in an "image" block.
-	blockType := "image"
-	if strings.Contains(mediaType, "pdf") {
-		blockType = "document"
+	// Claude: PDFs go in "document" blocks; images in "image" blocks.
+	blocks := make([]contentBlock, 0, len(atts)+1)
+	for _, a := range atts {
+		mt := a.MediaType
+		if mt == "" {
+			mt = "image/jpeg"
+		}
+		blockType := "image"
+		if strings.Contains(mt, "pdf") {
+			blockType = "document"
+		}
+		blocks = append(blocks, contentBlock{
+			Type:   blockType,
+			Source: &imageSource{Type: "base64", MediaType: mt, Data: a.B64},
+		})
 	}
-	msg := anthropicMessage{
-		Role: "user",
-		Content: []contentBlock{
-			{Type: blockType, Source: &imageSource{Type: "base64", MediaType: mediaType, Data: imageB64}},
-			{Type: "text", Text: user},
-		},
-	}
+	blocks = append(blocks, contentBlock{Type: "text", Text: user})
+	msg := anthropicMessage{Role: "user", Content: blocks}
 	// Vision + task-splitting needs more room than a single tutor answer.
 	return c.send(ctx, system, []anthropicMessage{msg}, 3000)
 }
