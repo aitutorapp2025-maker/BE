@@ -133,8 +133,12 @@ type chatSyncItem struct {
 	Text       string `json:"text"`
 	HomeworkID uint   `json:"homework_id"`
 	ImageURL   string `json:"image_url"`
+	Thumb      string `json:"thumb"` // small base64 thumbnail (image kind)
 	SentAt     int64  `json:"sent_at"` // ms since epoch
 }
+
+// maxThumbChars caps a synced thumbnail (~96KB base64 ≈ 72KB image).
+const maxThumbChars = 96 << 10
 
 type chatSyncRequest struct {
 	Messages []chatSyncItem `json:"messages"`
@@ -174,6 +178,10 @@ func (h *ChatHistoryHandler) Sync(c *fiber.Ctx) error {
 		if m.SentAt > 0 {
 			sentAt = time.UnixMilli(m.SentAt)
 		}
+		thumb := strings.TrimSpace(m.Thumb)
+		if kind != "image" || len(thumb) > maxThumbChars {
+			thumb = ""
+		}
 		rows = append(rows, model.ChatMessage{
 			StudentID:  studentID,
 			ClientID:   cid,
@@ -183,6 +191,7 @@ func (h *ChatHistoryHandler) Sync(c *fiber.Ctx) error {
 			Text:       m.Text,
 			HomeworkID: m.HomeworkID,
 			ImageURL:   strings.TrimSpace(m.ImageURL),
+			Thumb:      thumb,
 			SentAt:     sentAt,
 		})
 	}

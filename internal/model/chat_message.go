@@ -24,6 +24,10 @@ type ChatMessage struct {
 	// the server-hosted picture for an image attachment (shown on other devices).
 	HomeworkID uint   `gorm:"not null;default:0" json:"homework_id"`
 	ImageURL   string `gorm:"size:400" json:"image_url"`
+	// Thumb is a small base64 thumbnail for image attachments, synced so the
+	// picture still renders after a reinstall / on another device even when the
+	// original file URL is unreachable.
+	Thumb string `gorm:"type:text" json:"thumb"`
 
 	SentAt    time.Time `json:"sent_at"` // client message time (ordering key)
 	CreatedAt time.Time `json:"created_at"`

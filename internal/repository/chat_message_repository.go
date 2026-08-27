@@ -129,15 +129,20 @@ func (r *ChatMessageRepository) DeleteConversation(studentID uint, convID string
 		Delete(&model.ChatConversation{}).Error
 }
 
-// UpsertBatch inserts messages, ignoring any whose (student_id, client_id)
-// already exists — so the app can re-push its history idempotently. No-op on an
-// empty slice.
+// UpsertBatch inserts messages; a row that already exists (student_id,
+// client_id) is left as-is EXCEPT its thumbnail, which is backfilled when the
+// stored one is empty — so a device that still holds the local image thumbs
+// can donate them to rows synced before thumbnails existed. Idempotent.
 func (r *ChatMessageRepository) UpsertBatch(msgs []model.ChatMessage) error {
 	if len(msgs) == 0 {
 		return nil
 	}
 	return r.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "student_id"}, {Name: "client_id"}},
-		DoNothing: true,
+		Columns: []clause.Column{{Name: "student_id"}, {Name: "client_id"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"thumb": gorm.Expr(
+				"CASE WHEN chat_messages.thumb = '' OR chat_messages.thumb IS NULL " +
+					"THEN excluded.thumb ELSE chat_messages.thumb END"),
+		}),
 	}).CreateInBatches(msgs, 100).Error
 }
