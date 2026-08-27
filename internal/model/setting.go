@@ -80,6 +80,13 @@ type Setting struct {
 	SmsExpertRoute    string `gorm:"size:20" json:"smsexpert_route"`    // route
 	SmsExpertType     string `gorm:"size:20" json:"smsexpert_type"`     // type
 
+	// Test OTP: phone numbers the admin lists here log in with the fixed
+	// TestOtpCode and NO SMS is ever sent to them (app-store review accounts,
+	// internal testing). Every other number gets a real random OTP by SMS.
+	TestOtpEnabled bool   `gorm:"not null;default:false" json:"test_otp_enabled"`
+	TestOtpCode    string `gorm:"size:10" json:"test_otp_code"`
+	TestOtpPhones  string `gorm:"size:2000" json:"test_otp_phones"` // comma/newline separated
+
 	// WhatsApp (Meta Business Cloud API) — sends parents the daily study report.
 	// The access token is write-only; WhatsappTokenSet tells the admin UI one is
 	// on file. Template: an APPROVED template whose body is a single {{1}}

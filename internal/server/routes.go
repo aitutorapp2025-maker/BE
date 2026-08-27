@@ -78,7 +78,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// New students get their free trial (plan + credits) on first login.
 	studentAuthService := service.NewStudentAuthService(
 		studentRepo, deviceTokenRepo, sessStore, smsPublisher, d.Cfg, planRepo, creditService,
-		googleProvider)
+		googleProvider, settingRepo)
 
 	healthHandler := handler.NewHealthHandler(d.DB, d.Redis, d.MQ)
 	// Admin users & roles (RBAC): accounts are created with an emailed temporary

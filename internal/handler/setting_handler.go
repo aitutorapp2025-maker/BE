@@ -81,6 +81,11 @@ type settingRequest struct {
 	SmsExpertRoute    string `json:"smsexpert_route"`
 	SmsExpertType     string `json:"smsexpert_type"`
 
+	// Test OTP (admin-listed numbers get the fixed code, no SMS).
+	TestOtpEnabled bool   `json:"test_otp_enabled"`
+	TestOtpCode    string `json:"test_otp_code"`
+	TestOtpPhones  string `json:"test_otp_phones"`
+
 	// WhatsApp (parents' daily report). Token is write-only: empty keeps it.
 	WhatsappEnabled      bool   `json:"whatsapp_enabled"`
 	WhatsappToken        string `json:"whatsapp_token"`
@@ -334,6 +339,21 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.SmsExpertType = strings.TrimSpace(req.SmsExpertType)
 	if strings.TrimSpace(req.SmsExpertPassword) != "" {
 		s.SmsExpertPassword = req.SmsExpertPassword
+	}
+
+	// Test OTP. The code must be 4–8 digits when the feature is on.
+	s.TestOtpEnabled = req.TestOtpEnabled
+	s.TestOtpPhones = strings.TrimSpace(req.TestOtpPhones)
+	code := strings.TrimSpace(req.TestOtpCode)
+	if code != "" {
+		if len(code) < 4 || len(code) > 8 || strings.Trim(code, "0123456789") != "" {
+			return fiber.NewError(fiber.StatusBadRequest, "test OTP must be 4–8 digits")
+		}
+	}
+	s.TestOtpCode = code
+	if s.TestOtpEnabled && (s.TestOtpCode == "" || s.TestOtpPhones == "") {
+		return fiber.NewError(fiber.StatusBadRequest,
+			"to enable the test OTP, set both the code and at least one phone number")
 	}
 
 	// WhatsApp (parents' daily report). Token is write-only.

@@ -43,6 +43,8 @@ type StudentAuthService struct {
 	plans     *repository.PlanRepository
 	credits   *CreditService
 	googleCfg GoogleConfigFunc // admin-managed Google SSO config
+	// settings powers the admin-managed test-OTP list (nil = feature off).
+	settings *repository.SettingRepository
 }
 
 // NewStudentAuthService builds a StudentAuthService.
@@ -50,7 +52,7 @@ func NewStudentAuthService(students *repository.StudentRepository,
 	devices *repository.DeviceTokenRepository, sessions *session.Store,
 	smsPub *sms.Publisher, cfg config.Config,
 	plans *repository.PlanRepository, credits *CreditService,
-	googleCfg GoogleConfigFunc) *StudentAuthService {
+	googleCfg GoogleConfigFunc, settings *repository.SettingRepository) *StudentAuthService {
 	return &StudentAuthService{
 		students:  students,
 		devices:   devices,
@@ -60,6 +62,7 @@ func NewStudentAuthService(students *repository.StudentRepository,
 		plans:     plans,
 		credits:   credits,
 		googleCfg: googleCfg,
+		settings:  settings,
 	}
 }
 
@@ -128,6 +131,17 @@ func (s *StudentAuthService) SendOTP(ctx context.Context, phone string) (devCode
 		return "", ErrOTPThrottled
 	}
 
+	// Admin-listed test number: store the admin's fixed code and never contact
+	// the SMS gateway. The code is NOT returned (anyone can probe the endpoint;
+	// only people who saw it in the admin panel know it). Works in production —
+	// this is how app-store reviewers and internal testers log in.
+	if code, ok := s.testOTPFor(p); ok {
+		if err := s.sessions.SetOTP(ctx, p, code, otpTTL); err != nil {
+			return "", err
+		}
+		return "", nil
+	}
+
 	// Development: fixed code, no SMS sent.
 	if !s.cfg.IsProduction() {
 		code := s.cfg.OTPStatic
@@ -152,6 +166,33 @@ func (s *StudentAuthService) SendOTP(ctx context.Context, phone string) (devCode
 		return "", err
 	}
 	return "", nil
+}
+
+// testOTPFor reports whether canonical phone p is on the admin's test-number
+// list, returning the admin-set fixed OTP when it is. Settings are read per
+// call (cached repo), so admin edits apply instantly with no restart.
+func (s *StudentAuthService) testOTPFor(p string) (string, bool) {
+	if s.settings == nil {
+		return "", false
+	}
+	cfg, err := s.settings.Get()
+	if err != nil || !cfg.TestOtpEnabled {
+		return "", false
+	}
+	code := strings.TrimSpace(cfg.TestOtpCode)
+	if code == "" {
+		return "", false
+	}
+	// Split on commas/semicolons/newlines ONLY — numbers are often typed with
+	// internal spaces ("+91 98888 77777"); canonPhone strips those per entry.
+	for _, raw := range strings.FieldsFunc(cfg.TestOtpPhones, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r'
+	}) {
+		if canonPhone(raw) == p {
+			return code, true
+		}
+	}
+	return "", false
 }
 
 // VerifyOTP checks the code and, on success, finds or creates the student by
