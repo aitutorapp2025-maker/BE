@@ -129,11 +129,13 @@ func (s *TutorService) Ask(ctx context.Context, question string, sc StudentConte
 		return nil, fmt.Errorf("retrieve: %w", err)
 	}
 	if len(sources) == 0 {
-		return &AskResult{
-			Answer: "I don't have the textbook for your class loaded yet, so I can't give a " +
-				"textbook-based answer. Please check back soon — your teacher is adding the books.",
-			Grounded: false,
-		}, nil
+		// No textbook indexed for this class — answer from general knowledge
+		// (class-appropriate, in the student's language) instead of refusing.
+		answer, aerr := s.chat.Complete(ctx, generalTutorSystemPrompt(sc), question)
+		if aerr != nil {
+			return nil, fmt.Errorf("generate answer: %w", aerr)
+		}
+		return &AskResult{Answer: strings.TrimSpace(answer), Grounded: false}, nil
 	}
 
 	answer, err := s.chat.Complete(ctx, tutorSystemPrompt(sc), buildUserPrompt(question, sources))
@@ -162,12 +164,13 @@ func (s *TutorService) AskStream(ctx context.Context, question string, sc Studen
 		return nil, fmt.Errorf("retrieve: %w", err)
 	}
 	if len(sources) == 0 {
-		msg := "I don't have the textbook for your class loaded yet, so I can't give a " +
-			"textbook-based answer. Please check back soon — your teacher is adding the books."
-		if onDelta != nil {
-			onDelta(msg)
+		// No textbook indexed for this class — stream a general-knowledge
+		// answer (class-appropriate, student's language) instead of refusing.
+		full, aerr := s.chat.CompleteStream(ctx, generalTutorSystemPrompt(sc), question, onDelta)
+		if aerr != nil {
+			return nil, fmt.Errorf("generate answer: %w", aerr)
 		}
-		return &AskResult{Answer: msg, Grounded: false}, nil
+		return &AskResult{Answer: strings.TrimSpace(full), Grounded: false}, nil
 	}
 	full, err := s.chat.CompleteStream(ctx, tutorSystemPrompt(sc), buildUserPrompt(question, sources), onDelta)
 	if err != nil {
@@ -311,6 +314,29 @@ Answer using ONLY the textbook passages provided in the user's message. Rules:
 - Keep it concise. Use short paragraphs or bullet points. Avoid jargon; when a technical term is needed, explain it.
 - Never mention "passages", "context", "chunks", or that you were given excerpts — just teach.`,
 		sc.Class, group, boardOrDefault(sc.Board), mediumOrDefault(sc.Medium), lang)
+}
+
+// generalTutorSystemPrompt is used when NO textbook is indexed for the
+// student's class: same warm tutor persona, answering from general knowledge
+// appropriate to the class and board syllabus instead of refusing.
+func generalTutorSystemPrompt(sc StudentContext) string {
+	lang := sc.TeachingLanguage
+	if lang == "" {
+		lang = "the student's medium of instruction"
+	}
+	group := ""
+	if sc.Group != "" {
+		group = fmt.Sprintf(" (%s group)", sc.Group)
+	}
+	return fmt.Sprintf(`You are Vaha, a friendly, patient tutor for an Indian school student in %s%s, `+
+		`%s board, studying in %s medium.
+
+Answer the student's question helpfully from your own knowledge, pitched at their class level and aligned with the %s syllabus. Rules:
+- Explain simply and step by step, in a warm, encouraging tone a school student can follow. Prefer %s.
+- Keep it concise. Use short paragraphs or bullet points. Avoid jargon; when a technical term is needed, explain it.
+- Stick to educational topics; gently steer anything else back to studies.`,
+		sc.Class, group, boardOrDefault(sc.Board), mediumOrDefault(sc.Medium),
+		boardOrDefault(sc.Board), lang)
 }
 
 func buildUserPrompt(question string, sources []repository.RetrievedChunk) string {

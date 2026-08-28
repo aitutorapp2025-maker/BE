@@ -96,10 +96,10 @@ func (h *TutorHandler) Ask(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "could not answer right now, please try again")
 	}
 
-	// Charge only a genuine, grounded answer. If nothing was indexed for the
-	// class (not the student's fault) we don't bill the credit.
+	// Every real AI answer is charged — including general-knowledge answers
+	// when no textbook is indexed for the class (the AI cost is the same).
 	balance = st.Credits
-	if result.Grounded {
+	if strings.TrimSpace(result.Answer) != "" {
 		if nb, err := h.credits.Charge(studentID, service.ActionAskText); err == nil {
 			balance = nb
 		}
@@ -198,9 +198,10 @@ func (h *TutorHandler) AskStream(c *fiber.Ctx) error {
 			})
 			return
 		}
-		// Charge only a genuine, grounded answer (same rule as Ask).
+		// Every real AI answer is charged — grounded or general (same rule as
+		// Ask; the AI cost is the same either way).
 		bal := startBalance
-		if result.Grounded {
+		if strings.TrimSpace(result.Answer) != "" {
 			if nb, err := credits.Charge(studentID, service.ActionAskText); err == nil {
 				bal = nb
 			}
