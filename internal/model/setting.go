@@ -80,6 +80,14 @@ type Setting struct {
 	SmsExpertRoute    string `gorm:"size:20" json:"smsexpert_route"`    // route
 	SmsExpertType     string `gorm:"size:20" json:"smsexpert_type"`     // type
 
+	// Social media profile URLs shown as icons in the landing-page footer
+	// (empty = icon hidden). Public values.
+	SocialFacebook  string `gorm:"size:300" json:"social_facebook"`
+	SocialInstagram string `gorm:"size:300" json:"social_instagram"`
+	SocialYoutube   string `gorm:"size:300" json:"social_youtube"`
+	SocialTwitter   string `gorm:"size:300" json:"social_twitter"` // X
+	SocialLinkedin  string `gorm:"size:300" json:"social_linkedin"`
+
 	// Test OTP: phone numbers the admin lists here log in with the fixed
 	// TestOtpCode and NO SMS is ever sent to them (app-store review accounts,
 	// internal testing). Every other number gets a real random OTP by SMS.

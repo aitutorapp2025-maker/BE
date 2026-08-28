@@ -100,7 +100,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	settingHandler := handler.NewSettingHandler(settingRepo, emailPublisher, smsPublisher, tutorService.Probe)
 
 	landingHandler := handler.NewLandingHandler(
-		navRepo, statRepo, featureRepo, testimonialRepo, faqRepo, landingTextRepo, landingSeoRepo, settingRepo, cacheStore)
+		navRepo, statRepo, featureRepo, testimonialRepo, faqRepo, landingTextRepo, landingSeoRepo, settingRepo, cacheStore, chatClient, d.Redis)
 	navCrud := handler.NewLandingCrudHandler[model.LandingNavItem, *model.LandingNavItem](navRepo, "nav item")
 	statCrud := handler.NewLandingCrudHandler[model.LandingStat, *model.LandingStat](statRepo, "stat")
 	featureCrud := handler.NewLandingCrudHandler[model.LandingFeature, *model.LandingFeature](featureRepo, "feature")
@@ -194,6 +194,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// (the Encrypt middleware reads the X-Session header).
 	enc := middleware.Encrypt(sessStore)
 	v1.Get("/landing", enc, landingHandler.Public)
+	// Public website chat assistant (rate-limited per IP; anon-E2E encrypted).
+	v1.Post("/landing/chat", enc, landingHandler.Chat)
 	// Plain (not E2E) SEO head fragment for hosting-layer injection into
 	// index.html so no-JS social crawlers get the admin-managed meta.
 	v1.Get("/landing/meta.html", landingSeoHandler.MetaHTML)

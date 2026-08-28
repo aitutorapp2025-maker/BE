@@ -81,6 +81,13 @@ type settingRequest struct {
 	SmsExpertRoute    string `json:"smsexpert_route"`
 	SmsExpertType     string `json:"smsexpert_type"`
 
+	// Social profile URLs (landing footer icons).
+	SocialFacebook  string `json:"social_facebook"`
+	SocialInstagram string `json:"social_instagram"`
+	SocialYoutube   string `json:"social_youtube"`
+	SocialTwitter   string `json:"social_twitter"`
+	SocialLinkedin  string `json:"social_linkedin"`
+
 	// Test OTP (admin-listed numbers get the fixed code, no SMS).
 	TestOtpEnabled bool   `json:"test_otp_enabled"`
 	TestOtpCode    string `json:"test_otp_code"`
@@ -340,6 +347,13 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	if strings.TrimSpace(req.SmsExpertPassword) != "" {
 		s.SmsExpertPassword = req.SmsExpertPassword
 	}
+
+	// Social profile URLs (shown as icons in the landing footer).
+	s.SocialFacebook = strings.TrimSpace(req.SocialFacebook)
+	s.SocialInstagram = strings.TrimSpace(req.SocialInstagram)
+	s.SocialYoutube = strings.TrimSpace(req.SocialYoutube)
+	s.SocialTwitter = strings.TrimSpace(req.SocialTwitter)
+	s.SocialLinkedin = strings.TrimSpace(req.SocialLinkedin)
 
 	// Test OTP. The code must be 4–8 digits when the feature is on.
 	s.TestOtpEnabled = req.TestOtpEnabled
