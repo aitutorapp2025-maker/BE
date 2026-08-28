@@ -60,7 +60,7 @@ type AIConfig struct {
 	// or "gemini" (Google, much cheaper per call). Embeddings stay separate.
 	AnswersProvider string
 	GeminiKey       string
-	GeminiModel     string // e.g. gemini-2.5-flash-lite
+	GeminiModel     string // e.g. gemini-3.5-flash-lite
 	VoyageKey       string
 	VoyageModel     string // e.g. voyage-3
 	EmbedDim        int    // embedding dimension (must match the vector column)
@@ -223,7 +223,7 @@ func Load() Config {
 			AnthropicModel:  env("ANTHROPIC_MODEL", "claude-sonnet-5"),
 			AnswersProvider: env("AI_ANSWERS_PROVIDER", "claude"),
 			GeminiKey:       env("GEMINI_API_KEY", ""),
-			GeminiModel:     env("GEMINI_MODEL", "gemini-2.5-flash-lite"),
+			GeminiModel:     env("GEMINI_MODEL", "gemini-3.5-flash-lite"),
 			VoyageKey:       env("VOYAGE_API_KEY", ""),
 			VoyageModel:     env("VOYAGE_MODEL", "voyage-3"),
 			EmbedDim:        envInt("AI_EMBED_DIM", 1024),

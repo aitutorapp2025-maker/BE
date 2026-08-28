@@ -122,7 +122,7 @@ type Setting struct {
 	// answers. The Gemini key is write-only like the other provider keys.
 	AnswersProvider string `gorm:"size:20" json:"answers_provider"`
 	GeminiAPIKey    string `gorm:"size:255" json:"-"`
-	GeminiModel     string `gorm:"size:60" json:"gemini_model"` // e.g. gemini-2.5-flash-lite
+	GeminiModel     string `gorm:"size:60" json:"gemini_model"` // e.g. gemini-3.5-flash-lite
 	VoyageAPIKey    string `gorm:"size:255" json:"-"`
 	VoyageModel     string `gorm:"size:60" json:"voyage_model"` // e.g. voyage-3
 	// Embeddings backend: "voyage" (cloud) or "local" (self-hosted BGE-M3 via an
