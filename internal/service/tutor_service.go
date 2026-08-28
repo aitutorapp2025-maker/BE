@@ -335,7 +335,7 @@ Answer using ONLY the textbook passages provided in the user's message. Rules:
 - If the passages contain the answer, explain it simply and step by step, in a warm, encouraging tone a school student can follow. Prefer %s.
 - If the passages do NOT contain the answer, say clearly that it isn't in the current textbook material, and do not invent facts from outside the passages.
 - Keep it concise. Use short paragraphs or bullet points. Avoid jargon; when a technical term is needed, explain it.
-- Never mention "passages", "context", "chunks", or that you were given excerpts — just teach.`,
+- Never mention "passages", "context", "chunks", or that you were given excerpts — just teach.`+languageRule(mediumOrDefault(sc.Medium), lang),
 		sc.Class, group, boardOrDefault(sc.Board), mediumOrDefault(sc.Medium), lang)
 }
 
@@ -357,7 +357,7 @@ func generalTutorSystemPrompt(sc StudentContext) string {
 Answer the student's question helpfully from your own knowledge, pitched at their class level and aligned with the %s syllabus. Rules:
 - Explain simply and step by step, in a warm, encouraging tone a school student can follow. Prefer %s.
 - Keep it concise. Use short paragraphs or bullet points. Avoid jargon; when a technical term is needed, explain it.
-- Stick to educational topics; gently steer anything else back to studies.`,
+- Stick to educational topics; gently steer anything else back to studies.`+languageRule(mediumOrDefault(sc.Medium), lang),
 		sc.Class, group, boardOrDefault(sc.Board), mediumOrDefault(sc.Medium),
 		boardOrDefault(sc.Board), lang)
 }
@@ -399,7 +399,7 @@ Teach the task so the student truly understands it. Rules:
 - NEVER give only the final answer — always show the steps and the WHY.
 - Lean on the textbook passages provided when they're relevant; you may add gentle, standard, age-appropriate explanation, but do NOT introduce facts that contradict the textbook.
 - Warm and encouraging. Short paragraphs or bullets. Explain any technical term.
-- Never mention "passages", "context", "chunks" or that you were given excerpts — just teach.`,
+- Never mention "passages", "context", "chunks" or that you were given excerpts — just teach.`+languageRule(medium, lang),
 		sc.Class, group, boardOrDefault(sc.Board), medium,
 		medium, lang, medium, lang)
 }
@@ -431,7 +431,7 @@ Answer the doubt clearly and simply. Rules:
 - Answer step by step — never just the final answer.
 - Use the textbook passages when they help; you may add gentle standard explanation, but never contradict the textbook or invent facts.
 - Keep it focused on the doubt. Give a small example if it helps.
-- Never mention "passages", "context" or that you were given excerpts — just answer.`,
+- Never mention "passages", "context" or that you were given excerpts — just answer.`+languageRule(medium, lang),
 		sc.Class, boardOrDefault(sc.Board), medium, lang, medium, lang)
 }
 
@@ -448,6 +448,28 @@ func buildDoubtPrompt(topic, question string, sources []repository.RetrievedChun
 	b.WriteString("\n\nStudent's doubt: ")
 	b.WriteString(question)
 	return b.String()
+}
+
+// languageRule is the MANDATORY language instruction appended to every tutor
+// prompt. Small/fast models ignore soft phrasing like "prefer Tamil", so this
+// is explicit, repeated, and placed at the end of the system prompt (where
+// models weigh instructions most heavily).
+func languageRule(medium, lang string) string {
+	if lang == "" {
+		lang = medium
+	}
+	if strings.EqualFold(strings.TrimSpace(medium), strings.TrimSpace(lang)) {
+		return fmt.Sprintf(`
+
+LANGUAGE RULE (MANDATORY): Write your ENTIRE reply in %s, using simple words a school student understands.`, lang)
+	}
+	return fmt.Sprintf(`
+
+LANGUAGE RULE (MANDATORY — the student chose this and cannot understand otherwise):
+- EVERY sentence of YOUR explanation MUST be written in %s. Never write explanations in %s or any other language.
+- Only the study content itself — book sentences, definitions, formulas, technical terms — stays in %s; immediately after each one, explain it in %s.
+- Before you answer, check: is every explanation sentence in %s? If not, rewrite it in %s.`,
+		lang, medium, medium, lang, lang, lang)
 }
 
 func boardOrDefault(b string) string {
