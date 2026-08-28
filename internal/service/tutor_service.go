@@ -250,6 +250,29 @@ func (s *TutorService) AnswerDoubt(ctx context.Context, topic, question string, 
 	return &AskResult{Answer: strings.TrimSpace(answer), Sources: sources, Grounded: len(sources) > 0}, nil
 }
 
+// AnswerDoubtImage answers a doubt the student sent as a PHOTO (a question
+// from their book/notebook, possibly handwritten): the vision model reads the
+// image and explains the solution step by step, bilingually (content in the
+// medium, explanation in the teaching language). An optional typed/spoken
+// question accompanies the image.
+func (s *TutorService) AnswerDoubtImage(ctx context.Context, topic, question, imageB64, mediaType string, sc StudentContext) (*AskResult, error) {
+	if strings.TrimSpace(imageB64) == "" {
+		return nil, fmt.Errorf("empty image")
+	}
+	q := strings.TrimSpace(question)
+	if q == "" {
+		q = "Please read the question in this photo and explain the solution step by step."
+	}
+	prompt := "Homework task the student is learning: " + topic +
+		"\n\nThe student sent a PHOTO of a question (from their book or notebook — it may be handwritten). " +
+		"Read it carefully, then: " + q
+	answer, err := s.chat.CompleteVision(ctx, doubtSystemPrompt(sc), prompt, imageB64, mediaType)
+	if err != nil {
+		return nil, fmt.Errorf("answer photo doubt: %w", err)
+	}
+	return &AskResult{Answer: strings.TrimSpace(answer)}, nil
+}
+
 // AnswerDoubtStream is the streaming variant of AnswerDoubt: it streams the
 // answer via onDelta as it's generated and returns the full text once done.
 func (s *TutorService) AnswerDoubtStream(ctx context.Context, topic, question string, sc StudentContext, onDelta func(string)) (*AskResult, error) {
@@ -359,16 +382,26 @@ func teachSystemPrompt(sc StudentContext) string {
 	if sc.Group != "" {
 		group = fmt.Sprintf(" (%s group)", sc.Group)
 	}
-	return fmt.Sprintf(`You are Vaha, a friendly, patient tutor for an Indian school student in %s%s, `+
-		`%s board, studying in %s medium. You are TEACHING one homework task.
+	medium := mediumOrDefault(sc.Medium)
+	return fmt.Sprintf(`You are Vaha, a friendly, patient personal tutor for an Indian school student in %s%s, `+
+		`%s board, studying in %s medium. You are TEACHING one homework task, step by step, like a caring teacher sitting next to the student.
+
+BILINGUAL TEACHING METHOD (very important):
+- The student's CONTENT medium is %s and their EXPLANATION language is %s.
+- Present each piece of study content (definitions, sentences, formulas, examples) in %s — exactly as it would appear in their book.
+- Then immediately EXPLAIN that line/concept in %s, simply, so the student truly understands it. If the two languages are the same, just teach clearly in that language.
+- Example of the style (English content, Tamil explanation):
+  "Photosynthesis is the process by which green plants prepare their own food."
+  → Photosynthesis என்றால் பச்சைத் தாவரங்கள் தங்களுக்குத் தேவையான உணவைத் தாங்களே தயாரிக்கும் செயல்முறை.
 
 Teach the task so the student truly understands it. Rules:
-- Reply in %s (simple language the student can follow).
-- Structure it: a one-line "what this is about", then a simple step-by-step explanation, then ONE short worked example, then a one-line "quick check" question at the end.
-- Lean on the textbook passages provided when they're relevant; you may add gentle, standard, age-appropriate explanation to make it clear, but do NOT introduce facts that contradict the textbook.
+- Structure: one line on "what this is about", then the content line-by-line with its explanation (the bilingual method above), then ONE short worked example explained step by step, then a one-line "quick check" question at the end.
+- NEVER give only the final answer — always show the steps and the WHY.
+- Lean on the textbook passages provided when they're relevant; you may add gentle, standard, age-appropriate explanation, but do NOT introduce facts that contradict the textbook.
 - Warm and encouraging. Short paragraphs or bullets. Explain any technical term.
 - Never mention "passages", "context", "chunks" or that you were given excerpts — just teach.`,
-		sc.Class, group, boardOrDefault(sc.Board), mediumOrDefault(sc.Medium), lang)
+		sc.Class, group, boardOrDefault(sc.Board), medium,
+		medium, lang, medium, lang)
 }
 
 func buildTeachPrompt(topic string, sources []repository.RetrievedChunk) string {
@@ -389,15 +422,17 @@ func doubtSystemPrompt(sc StudentContext) string {
 	if lang == "" {
 		lang = "the student's medium of instruction"
 	}
+	medium := mediumOrDefault(sc.Medium)
 	return fmt.Sprintf(`You are Vaha, a friendly, patient tutor for an Indian school student in %s, `+
 		`%s board, %s medium. The student is working on a homework task and has a DOUBT.
 
 Answer the doubt clearly and simply. Rules:
-- Reply in %s, in a warm, encouraging tone the student can follow.
+- Explain in %s, in a warm, encouraging tone the student can follow. Keep any study content (definitions, formulas, book sentences) in %s and explain each in %s.
+- Answer step by step — never just the final answer.
 - Use the textbook passages when they help; you may add gentle standard explanation, but never contradict the textbook or invent facts.
-- Keep it short and focused on the doubt. Give a small example if it helps.
+- Keep it focused on the doubt. Give a small example if it helps.
 - Never mention "passages", "context" or that you were given excerpts — just answer.`,
-		sc.Class, boardOrDefault(sc.Board), mediumOrDefault(sc.Medium), lang)
+		sc.Class, boardOrDefault(sc.Board), medium, lang, medium, lang)
 }
 
 func buildDoubtPrompt(topic, question string, sources []repository.RetrievedChunk) string {

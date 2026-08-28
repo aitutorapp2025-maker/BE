@@ -171,6 +171,37 @@ func (s *HomeworkService) AskDoubt(ctx context.Context, studentID, homeworkID, t
 	return s.tutor.AnswerDoubt(ctx, topic, question, sc)
 }
 
+// AskDoubtImage answers a doubt the student sent as a PHOTO during a learning
+// session (a book/notebook question, possibly handwritten), scoped to a task.
+func (s *HomeworkService) AskDoubtImage(ctx context.Context, studentID, homeworkID, taskID uint, question, imageB64, mediaType string) (*AskResult, error) {
+	hw, err := s.homeworks.GetForStudent(homeworkID, studentID)
+	if err != nil {
+		return nil, err
+	}
+	var topic string
+	for _, t := range hw.Tasks {
+		if t.ID == taskID {
+			topic = strings.TrimSpace(t.Title + ". " + t.Description)
+			break
+		}
+	}
+	if topic == "" {
+		return nil, fmt.Errorf("task not found in this homework")
+	}
+	st, err := s.students.FindByID(studentID)
+	if err != nil {
+		return nil, fmt.Errorf("student: %w", err)
+	}
+	sc := StudentContext{
+		Class:            st.StudentClass,
+		Medium:           st.Medium,
+		Board:            st.Board,
+		Group:            st.StudentGroup,
+		TeachingLanguage: st.TeachingLanguage,
+	}
+	return s.tutor.AnswerDoubtImage(ctx, topic, question, imageB64, mediaType, sc)
+}
+
 // AskDoubtStream is the streaming variant of AskDoubt: it streams the answer via
 // onDelta as it's generated and returns the full text once done.
 func (s *HomeworkService) AskDoubtStream(ctx context.Context, studentID, homeworkID, taskID uint, question string, onDelta func(string)) (*AskResult, error) {

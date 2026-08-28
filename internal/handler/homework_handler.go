@@ -477,6 +477,47 @@ func (h *HomeworkHandler) Doubt(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"success": true, "answer": res.Answer, "grounded": res.Grounded})
 }
 
+// DoubtImage answers a doubt sent as a PHOTO (book/notebook question, possibly
+// handwritten) during an in-chat learning session, scoped to a task.
+// POST /api/v1/student/homework/:id/tasks/:taskId/doubt-image
+func (h *HomeworkHandler) DoubtImage(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	hwID, _ := strconv.ParseUint(c.Params("id"), 10, 64)
+	taskID, _ := strconv.ParseUint(c.Params("taskId"), 10, 64)
+	if hwID == 0 || taskID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid ids")
+	}
+	var req struct {
+		Image     string `json:"image"` // base64
+		MediaType string `json:"media_type"`
+		Question  string `json:"question"` // optional typed/spoken question
+	}
+	if err := c.BodyParser(&req); err != nil || strings.TrimSpace(req.Image) == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "a photo is required")
+	}
+	mt := strings.ToLower(strings.TrimSpace(req.MediaType))
+	if mt != "image/jpeg" && mt != "image/jpg" && mt != "image/png" {
+		return fiber.NewError(fiber.StatusUnsupportedMediaType, "please send a JPG or PNG photo")
+	}
+	if raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.Image)); err != nil ||
+		len(raw) == 0 || len(raw) > maxHomeworkBytes {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid or oversized photo")
+	}
+	if err := h.requireCredits(studentID, service.ActionDoubt); err != nil {
+		return err
+	}
+	res, err := h.hw.AskDoubtImage(c.Context(), studentID, uint(hwID), uint(taskID),
+		req.Question, strings.TrimSpace(req.Image), mt)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadGateway, "could not answer: "+err.Error())
+	}
+	_, _ = h.credits.Charge(studentID, service.ActionDoubt)
+	return c.JSON(fiber.Map{"success": true, "answer": res.Answer})
+}
+
 // DoubtStream is the streaming (SSE) variant of Doubt: the answer streams in
 // token-by-token. Signed + end-to-end encrypted (see AskStream).
 // POST /api/v1/student/homework/:id/tasks/:taskId/doubt/stream  { "question": "..." }

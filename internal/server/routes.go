@@ -306,6 +306,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Post("/homework/:id/tasks/:taskId/teach", homeworkHandler.Teach)
 	// Clear a doubt about one task (grounded Q&A in the student's language).
 	studentProtected.Post("/homework/:id/tasks/:taskId/doubt", homeworkHandler.Doubt)
+	// Photo doubts during an in-chat learning session (vision).
+	studentProtected.Post("/homework/:id/tasks/:taskId/doubt-image", homeworkHandler.DoubtImage)
 	// Written test: generate questions, then grade typed or handwritten answers.
 	studentProtected.Post("/homework/:id/test", homeworkHandler.GenerateTest)
 	studentProtected.Post("/homework/:id/test/grade", homeworkHandler.GradeTest)
