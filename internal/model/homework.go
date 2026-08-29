@@ -13,6 +13,11 @@ type Homework struct {
 	Subject   string         `gorm:"size:60" json:"subject"`
 	Title     string         `gorm:"size:160" json:"title"`
 	Summary   string         `gorm:"type:text" json:"summary"`
+	// Difficulty is the AI's read of the homework (easy | medium | hard) and
+	// FocusArea is the topic/skill the student should concentrate on — both
+	// narrated by the AI-Teacher flow after analysis.
+	Difficulty string `gorm:"size:20" json:"difficulty"`
+	FocusArea  string `gorm:"size:300" json:"focus_area"`
 	ImageURL  string         `gorm:"size:400" json:"image_url"`
 	Status    string         `gorm:"size:20;not null;default:new" json:"status"` // new | in_progress | done
 	// TestQuestions caches the AI-generated written/oral test (JSON) so re-taking

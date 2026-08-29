@@ -235,9 +235,11 @@ func (s *HomeworkService) AskDoubtStream(ctx context.Context, studentID, homewor
 
 // aiHomework is the JSON shape we ask Claude to return.
 type aiHomework struct {
-	Subject string `json:"subject"`
-	Title   string `json:"title"`
-	Summary string `json:"summary"`
+	Subject    string `json:"subject"`
+	Title      string `json:"title"`
+	Summary    string `json:"summary"`
+	Difficulty string `json:"difficulty"`
+	FocusArea  string `json:"focus_area"`
 	Tasks   []struct {
 		Title       string `json:"title"`
 		Description string `json:"description"`
@@ -331,6 +333,8 @@ func (s *HomeworkService) CreateFromAttachments(ctx context.Context, studentID u
 		`  "subject": "the subject, e.g. Science",` + "\n" +
 		`  "title": "a short homework title",` + "\n" +
 		`  "summary": "one friendly line starting like: You have <subject> homework today — ...",` + "\n" +
+		`  "difficulty": "easy | medium | hard — your honest read of this homework for this student's class",` + "\n" +
+		`  "focus_area": "one short line: the main topic/skill this student should focus on to improve",` + "\n" +
 		`  "tasks": [ {"title": "...", "description": "...", "duration_min": 10} ]` + "\n" +
 		"}\n" +
 		"Split the homework into EXACTLY 5 short tasks the student should do one by one " +
@@ -354,13 +358,21 @@ func (s *HomeworkService) CreateFromAttachments(ctx context.Context, studentID u
 		return nil, fmt.Errorf("ai returned an unreadable plan: %w", err)
 	}
 
+	diff := strings.ToLower(strings.TrimSpace(parsed.Difficulty))
+	switch diff {
+	case "easy", "medium", "hard":
+	default:
+		diff = ""
+	}
 	hw := &model.Homework{
-		StudentID: studentID,
-		Subject:   strings.TrimSpace(parsed.Subject),
-		Title:     strings.TrimSpace(parsed.Title),
-		Summary:   strings.TrimSpace(parsed.Summary),
-		ImageURL:  imageURL,
-		Status:    "new",
+		StudentID:  studentID,
+		Subject:    strings.TrimSpace(parsed.Subject),
+		Title:      strings.TrimSpace(parsed.Title),
+		Summary:    strings.TrimSpace(parsed.Summary),
+		Difficulty: diff,
+		FocusArea:  strings.TrimSpace(parsed.FocusArea),
+		ImageURL:   imageURL,
+		Status:     "new",
 	}
 	// Cap at 5 tasks; keep the model's order.
 	for i, t := range parsed.Tasks {
