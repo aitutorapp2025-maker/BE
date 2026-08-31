@@ -634,3 +634,30 @@ func (h *SettingHandler) TestWhatsApp(c *fiber.Ctx) error {
 		"message": "Test WhatsApp sent to " + req.To + " — check the phone.",
 	})
 }
+
+// TestWhatsAppOTP sends a sample login code through the Authentication
+// template, so the admin can verify the OTP template is approved and working.
+// Sent directly (not queued) so any Meta error surfaces in the response.
+// POST /api/v1/admin/settings/test-whatsapp-otp  { "to": "..." }
+func (h *SettingHandler) TestWhatsAppOTP(c *fiber.Ctx) error {
+	if h.wa == nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "WhatsApp sender not wired")
+	}
+	var req testEmailRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	req.To = strings.TrimSpace(req.To)
+	if !isPhone(req.To) {
+		return fiber.NewError(fiber.StatusBadRequest, "a valid recipient phone number is required")
+	}
+	ctx, cancel := context.WithTimeout(c.Context(), 25*time.Second)
+	defer cancel()
+	if err := h.wa.SendOTP(ctx, req.To, "123456"); err != nil {
+		return fiber.NewError(fiber.StatusBadGateway, "WhatsApp OTP send failed: "+err.Error())
+	}
+	return c.JSON(fiber.Map{
+		"success": true,
+		"message": "Test WhatsApp OTP (123456) sent to " + req.To + " — check the phone.",
+	})
+}
