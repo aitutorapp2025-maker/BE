@@ -2,6 +2,10 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -660,4 +664,86 @@ func (h *SettingHandler) TestWhatsAppOTP(c *fiber.Ctx) error {
 		"success": true,
 		"message": "Test WhatsApp OTP (123456) sent to " + req.To + " — check the phone.",
 	})
+}
+
+// WaDebug asks Meta about the WhatsApp setup using the SAVED token: the WABA
+// ids the token can reach and the status/components of every message template
+// (approval state, category, button type). Diagnoses "200 but never delivered".
+// GET /api/v1/admin/settings/wa-debug
+func (h *SettingHandler) WaDebug(c *fiber.Ctx) error {
+	s, err := h.settings.Get()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to load settings")
+	}
+	token := strings.TrimSpace(s.WhatsappToken)
+	if token == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "no WhatsApp token saved")
+	}
+	ctx, cancel := context.WithTimeout(c.Context(), 25*time.Second)
+	defer cancel()
+	get := func(url string) (map[string]any, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			return nil, fmt.Errorf("status %d: %.300s", resp.StatusCode, string(raw))
+		}
+		return m, nil
+	}
+
+	out := fiber.Map{"phone_id": s.WhatsappPhoneID}
+	// Phone-number details (name status, quality, throughput).
+	if pn, err := get("https://graph.facebook.com/v20.0/" + strings.TrimSpace(s.WhatsappPhoneID) +
+		"?fields=display_phone_number,verified_name,name_status,quality_rating,code_verification_status,platform_type,throughput"); err == nil {
+		out["phone"] = pn
+	} else {
+		out["phone_error"] = err.Error()
+	}
+	// WABA ids reachable by this token.
+	dbg, err := get("https://graph.facebook.com/v20.0/debug_token?input_token=" + token)
+	if err != nil {
+		out["debug_token_error"] = err.Error()
+		return c.JSON(out)
+	}
+	wabaIDs := map[string]bool{}
+	if data, ok := dbg["data"].(map[string]any); ok {
+		if gs, ok := data["granular_scopes"].([]any); ok {
+			for _, g := range gs {
+				if gm, ok := g.(map[string]any); ok {
+					if ids, ok := gm["target_ids"].([]any); ok {
+						for _, id := range ids {
+							if sid, ok := id.(string); ok {
+								wabaIDs[sid] = true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	templates := []any{}
+	for id := range wabaIDs {
+		tm, err := get("https://graph.facebook.com/v20.0/" + id +
+			"/message_templates?fields=name,status,category,language,components,rejected_reason&limit=100")
+		if err != nil {
+			templates = append(templates, fiber.Map{"waba": id, "error": err.Error()})
+			continue
+		}
+		if data, ok := tm["data"].([]any); ok {
+			templates = append(templates, fiber.Map{"waba": id, "templates": data})
+		} else {
+			templates = append(templates, fiber.Map{"waba": id, "raw": tm})
+		}
+	}
+	out["template_sets"] = templates
+	return c.JSON(out)
 }

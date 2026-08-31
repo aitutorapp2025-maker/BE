@@ -498,6 +498,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	adminProtected.Post("/settings/test-email", settingHandler.TestEmail)
 	adminProtected.Post("/settings/test-sms", settingHandler.TestSMS)
 	adminProtected.Post("/settings/test-whatsapp-otp", settingHandler.TestWhatsAppOTP)
+	adminProtected.Get("/settings/wa-debug", settingHandler.WaDebug)
 	adminProtected.Post("/settings/test-ai", settingHandler.TestAI)
 	adminProtected.Post("/settings/test-whatsapp", settingHandler.TestWhatsApp)
 
