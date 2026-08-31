@@ -730,6 +730,36 @@ func (h *SettingHandler) WaDebug(c *fiber.Ctx) error {
 			}
 		}
 	}
+	// System-user tokens often carry granular scopes with no target_ids ("all
+	// assets") — walk the business graph to find the WABAs instead.
+	if len(wabaIDs) == 0 {
+		if bz, err := get("https://graph.facebook.com/v20.0/me/businesses?fields=id,name"); err == nil {
+			if data, ok := bz["data"].([]any); ok {
+				for _, b := range data {
+					bm, ok := b.(map[string]any)
+					if !ok {
+						continue
+					}
+					bid, _ := bm["id"].(string)
+					for _, edge := range []string{"owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"} {
+						if wl, err := get("https://graph.facebook.com/v20.0/" + bid + "/" + edge); err == nil {
+							if wd, ok := wl["data"].([]any); ok {
+								for _, w := range wd {
+									if wm, ok := w.(map[string]any); ok {
+										if wid, ok := wm["id"].(string); ok {
+											wabaIDs[wid] = true
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		} else {
+			out["businesses_error"] = err.Error()
+		}
+	}
 	templates := []any{}
 	for id := range wabaIDs {
 		tm, err := get("https://graph.facebook.com/v20.0/" + id +
