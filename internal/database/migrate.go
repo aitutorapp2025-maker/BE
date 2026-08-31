@@ -160,6 +160,9 @@ func SeedTeachingLanguages(db *gorm.DB) (int, error) {
 		{Name: "English", Active: true},
 		{Name: "Hindi", Active: true},
 		{Name: "Telugu", Active: true},
+		{Name: "Kannada", Active: true},
+		{Name: "Malayalam", Active: true},
+		{Name: "Urdu", Active: true},
 	}
 	if err := db.Create(&langs).Error; err != nil {
 		return 0, err
