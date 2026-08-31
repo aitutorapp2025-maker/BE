@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
@@ -146,28 +147,32 @@ func CreateIndexes(db *gorm.DB) error {
 	return firstErr
 }
 
-// SeedTeachingLanguages inserts the default teaching languages if none exist.
+// SeedTeachingLanguages inserts any DEFAULT teaching language that is missing
+// (by name, case-insensitive). Idempotent: existing rows — including ones the
+// admin renamed or disabled — are never touched, so it doubles as the
+// migration that adds newly-introduced languages to older databases.
 func SeedTeachingLanguages(db *gorm.DB) (int, error) {
-	var count int64
-	if err := db.Model(&model.TeachingLanguage{}).Count(&count).Error; err != nil {
+	var existing []model.TeachingLanguage
+	if err := db.Find(&existing).Error; err != nil {
 		return 0, err
 	}
-	if count > 0 {
-		return 0, nil
+	have := map[string]bool{}
+	for _, l := range existing {
+		have[strings.ToLower(strings.TrimSpace(l.Name))] = true
 	}
-	langs := []model.TeachingLanguage{
-		{Name: "Tamil", Active: true},
-		{Name: "English", Active: true},
-		{Name: "Hindi", Active: true},
-		{Name: "Telugu", Active: true},
-		{Name: "Kannada", Active: true},
-		{Name: "Malayalam", Active: true},
-		{Name: "Urdu", Active: true},
+	added := 0
+	for _, name := range []string{
+		"Tamil", "English", "Hindi", "Telugu", "Kannada", "Malayalam", "Urdu",
+	} {
+		if have[strings.ToLower(name)] {
+			continue
+		}
+		if err := db.Create(&model.TeachingLanguage{Name: name, Active: true}).Error; err != nil {
+			return added, err
+		}
+		added++
 	}
-	if err := db.Create(&langs).Error; err != nil {
-		return 0, err
-	}
-	return len(langs), nil
+	return added, nil
 }
 
 // termsSeedContent is the default Terms & Conditions body. Lines starting with
