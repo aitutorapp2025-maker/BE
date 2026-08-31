@@ -46,6 +46,59 @@ func (r *HomeworkRepository) SaveTaskLesson(taskID uint, lesson string) error {
 		Update("lesson", lesson).Error
 }
 
+// DueTimeUps returns started, still-pending tasks whose planned minutes have
+// run out and that haven't had the "time's up" push yet. Candidates are
+// filtered by duration in Go (portable across SQL dialects); tasks started
+// more than 3 hours ago are considered stale and skipped.
+func (r *HomeworkRepository) DueTimeUps(now time.Time) ([]DueTaskReminder, error) {
+	type row struct {
+		TaskID      uint
+		StudentID   uint
+		TaskTitle   string
+		Subject     string
+		StartedAt   time.Time
+		DurationMin int
+	}
+	var rows []row
+	err := r.db.Model(&model.HomeworkTask{}).
+		Select("homework_tasks.id AS task_id, homeworks.student_id, homework_tasks.title AS task_title, homeworks.subject, homework_tasks.started_at, homework_tasks.duration_min").
+		Joins("JOIN homeworks ON homeworks.id = homework_tasks.homework_id").
+		Where("homework_tasks.status = 'pending'").
+		Where("homework_tasks.timeup_sent_at IS NULL").
+		Where("homework_tasks.started_at IS NOT NULL AND homework_tasks.started_at > ?",
+			now.Add(-3*time.Hour)).
+		Where("homeworks.status <> 'done'").
+		Limit(500).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]DueTaskReminder, 0, len(rows))
+	for _, x := range rows {
+		mins := x.DurationMin
+		if mins <= 0 {
+			mins = 10
+		}
+		if !now.Before(x.StartedAt.Add(time.Duration(mins) * time.Minute)) {
+			out = append(out, DueTaskReminder{
+				TaskID: x.TaskID, StudentID: x.StudentID,
+				TaskTitle: x.TaskTitle, Subject: x.Subject,
+			})
+		}
+	}
+	return out, nil
+}
+
+// MarkTimeupsSent stamps timeup_sent_at so each task's push fires only once.
+func (r *HomeworkRepository) MarkTimeupsSent(taskIDs []uint, now time.Time) error {
+	if len(taskIDs) == 0 {
+		return nil
+	}
+	return r.db.Model(&model.HomeworkTask{}).
+		Where("id IN ?", taskIDs).
+		Update("timeup_sent_at", now).Error
+}
+
 // MarkTaskStarted stamps started_at on a task the FIRST time it is taught
 // (later teaches keep the original start, so "time taken" stays honest).
 func (r *HomeworkRepository) MarkTaskStarted(taskID uint) error {

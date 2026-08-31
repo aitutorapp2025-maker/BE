@@ -232,6 +232,58 @@ func TaskRemindersJob(
 	}
 }
 
+// TaskTimeUpJob pushes "time's up" when a STARTED task's planned minutes run
+// out and the task still isn't completed — so a student who left the app
+// mid-lesson gets called back. Runs minutely; each task is pushed at most once.
+func TaskTimeUpJob(
+	homeworks *repository.HomeworkRepository,
+	devices *repository.DeviceTokenRepository,
+	push fcm.Pusher,
+) Job {
+	return Job{
+		Key:      "homework_time_up",
+		Schedule: "minutely",
+		Run: func(now time.Time) (string, error) {
+			due, err := homeworks.DueTimeUps(now)
+			if err != nil {
+				return "", err
+			}
+			if len(due) == 0 {
+				return "0 due", nil
+			}
+			if !push.Enabled() {
+				return fmt.Sprintf("%d due but FCM not configured (0 sent)", len(due)), nil
+			}
+			sent := 0
+			done := make([]uint, 0, len(due))
+			for _, d := range due {
+				done = append(done, d.TaskID)
+				tokens, terr := devices.TokensForStudent(d.StudentID)
+				if terr != nil || len(tokens) == 0 {
+					continue
+				}
+				body := fmt.Sprintf("Time's up for: %s — come back and finish it!", d.TaskTitle)
+				if s := d.Subject; s != "" {
+					body = fmt.Sprintf("Time's up for: %s (%s) — come back and finish it!", d.TaskTitle, s)
+				}
+				n, invalid, _ := push.SendToTokens(context.Background(), tokens,
+					"Time's up ⏰", body, "",
+					map[string]string{"type": "task_time_up"})
+				if len(invalid) > 0 {
+					_ = devices.DeleteTokens(invalid)
+				}
+				if n > 0 {
+					sent++
+				}
+			}
+			if err := homeworks.MarkTimeupsSent(done, now); err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("pushed %d of %d due", sent, len(due)), nil
+		},
+	}
+}
+
 // ParentDailyReportJob WhatsApps each parent their child's study report for the
 // day — tasks completed, tests taken and the day's score. Runs once per day
 // after 7 PM ("daily@19"). The cron only composes + enqueues on RabbitMQ; the

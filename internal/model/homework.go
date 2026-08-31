@@ -60,6 +60,9 @@ type HomeworkTask struct {
 	// "how long did this task take" line in the learning history.
 	StartedAt   *time.Time `json:"started_at"`
 	CompletedAt *time.Time `json:"completed_at"`
+	// TimeupSentAt marks the "time's up" push as sent (fires when a STARTED
+	// task's planned minutes run out and it still isn't done).
+	TimeupSentAt *time.Time `json:"-"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
