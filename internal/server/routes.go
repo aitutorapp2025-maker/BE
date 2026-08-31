@@ -76,10 +76,29 @@ func registerRoutes(app *fiber.App, d Deps) {
 	homeworkHandler := handler.NewHomeworkHandler(homeworkService, creditService, d.Redis)
 	// Google SSO config comes from admin Settings (env client id as fallback).
 	googleProvider := service.GoogleProvider(settingRepo, d.Cfg.GoogleClientID)
+	// WhatsApp sender (live config) — OTP delivery, parent reports, admin test.
+	waSender := wa.NewProvider(func() wa.Config {
+		s, err := settingRepo.Get()
+		if err != nil {
+			return wa.Config{}
+		}
+		return wa.Config{
+			Enabled:      s.WhatsappEnabled,
+			Token:        s.WhatsappToken,
+			PhoneID:      s.WhatsappPhoneID,
+			Template:     s.WhatsappTemplate,
+			TemplateLang: s.WhatsappTemplateLang,
+			CountryCode:  s.SmsCountryCode,
+			OtpEnabled:   s.WhatsappOtpEnabled,
+			OtpTemplate:  s.WhatsappOtpTemplate,
+			OtpLang:      s.WhatsappOtpLang,
+		}
+	})
+	waPublisher := wa.NewPublisher(d.MQ, waSender.Enabled)
 	// New students get their free trial (plan + credits) on first login.
 	studentAuthService := service.NewStudentAuthService(
 		studentRepo, deviceTokenRepo, sessStore, smsPublisher, d.Cfg, planRepo, creditService,
-		googleProvider, settingRepo)
+		googleProvider, settingRepo, waPublisher)
 
 	healthHandler := handler.NewHealthHandler(d.DB, d.Redis, d.MQ)
 	// Admin users & roles (RBAC): accounts are created with an emailed temporary
@@ -98,21 +117,6 @@ func registerRoutes(app *fiber.App, d Deps) {
 	razorpayClient := payment.NewClient(razorpayProvider)
 	// The plan handler auto-creates a Razorpay plan on create/price-change.
 	planHandler := handler.NewPlanHandler(planRepo, razorpayClient)
-	// WhatsApp sender for the admin "Send test WhatsApp" button (live config).
-	waSender := wa.NewProvider(func() wa.Config {
-		s, err := settingRepo.Get()
-		if err != nil {
-			return wa.Config{}
-		}
-		return wa.Config{
-			Enabled:      s.WhatsappEnabled,
-			Token:        s.WhatsappToken,
-			PhoneID:      s.WhatsappPhoneID,
-			Template:     s.WhatsappTemplate,
-			TemplateLang: s.WhatsappTemplateLang,
-			CountryCode:  s.SmsCountryCode,
-		}
-	})
 	settingHandler := handler.NewSettingHandler(settingRepo, emailPublisher, smsPublisher, tutorService.Probe, waSender)
 
 	landingHandler := handler.NewLandingHandler(

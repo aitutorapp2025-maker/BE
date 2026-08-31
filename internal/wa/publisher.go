@@ -11,9 +11,13 @@ const QueueWa = "wa.send"
 
 // Job is one WhatsApp message, published to RabbitMQ and delivered by the
 // WhatsApp worker in the background (same pattern as email/SMS/push).
+// Kind "otp" sends the Authentication template carrying Code; anything else
+// sends Text as a normal message.
 type Job struct {
 	Phone string `json:"phone"`
 	Text  string `json:"text"`
+	Kind  string `json:"kind,omitempty"`
+	Code  string `json:"code,omitempty"`
 }
 
 // Publisher enqueues WhatsApp jobs so callers (e.g. the daily-report cron)

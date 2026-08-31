@@ -27,7 +27,13 @@ func StartWaWorker(mq *queue.RabbitMQ, sender *wa.Provider, log *logger.Logger) 
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		defer cancel()
-		if err := sender.SendText(ctx, job.Phone, job.Text); err != nil {
+		var err error
+		if job.Kind == "otp" {
+			err = sender.SendOTP(ctx, job.Phone, job.Code)
+		} else {
+			err = sender.SendText(ctx, job.Phone, job.Text)
+		}
+		if err != nil {
 			log.Errorf("wa worker: send to %s: %v", job.Phone, err)
 			return nil
 		}

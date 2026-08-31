@@ -16,6 +16,7 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/session"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/sms"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/wa"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -45,6 +46,8 @@ type StudentAuthService struct {
 	googleCfg GoogleConfigFunc // admin-managed Google SSO config
 	// settings powers the admin-managed test-OTP list (nil = feature off).
 	settings *repository.SettingRepository
+	// waPub also delivers the OTP over WhatsApp when enabled (nil-safe).
+	waPub *wa.Publisher
 }
 
 // NewStudentAuthService builds a StudentAuthService.
@@ -52,7 +55,8 @@ func NewStudentAuthService(students *repository.StudentRepository,
 	devices *repository.DeviceTokenRepository, sessions *session.Store,
 	smsPub *sms.Publisher, cfg config.Config,
 	plans *repository.PlanRepository, credits *CreditService,
-	googleCfg GoogleConfigFunc, settings *repository.SettingRepository) *StudentAuthService {
+	googleCfg GoogleConfigFunc, settings *repository.SettingRepository,
+	waPub *wa.Publisher) *StudentAuthService {
 	return &StudentAuthService{
 		students:  students,
 		devices:   devices,
@@ -63,6 +67,7 @@ func NewStudentAuthService(students *repository.StudentRepository,
 		credits:   credits,
 		googleCfg: googleCfg,
 		settings:  settings,
+		waPub:     waPub,
 	}
 }
 
@@ -164,6 +169,14 @@ func (s *StudentAuthService) SendOTP(ctx context.Context, phone string) (devCode
 	text := fmt.Sprintf("%s is your Vaha AI verification code. Valid for 5 minutes.", code)
 	if err := s.sms.Enqueue(sms.Job{To: p, Text: text}); err != nil {
 		return "", err
+	}
+	// ALSO deliver over WhatsApp when the admin enabled it (Authentication
+	// template with a copy-code button). Best-effort — SMS is the guarantee.
+	if s.waPub != nil && s.waPub.Enabled() {
+		if cfg, err := s.settings.Get(); err == nil && cfg.WhatsappOtpEnabled &&
+			strings.TrimSpace(cfg.WhatsappOtpTemplate) != "" {
+			_ = s.waPub.Enqueue(wa.Job{Phone: p, Kind: "otp", Code: code})
+		}
 	}
 	return "", nil
 }

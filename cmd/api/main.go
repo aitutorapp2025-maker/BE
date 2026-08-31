@@ -275,6 +275,9 @@ func main() {
 			Template:     s.WhatsappTemplate,
 			TemplateLang: s.WhatsappTemplateLang,
 			CountryCode:  s.SmsCountryCode,
+			OtpEnabled:   s.WhatsappOtpEnabled,
+			OtpTemplate:  s.WhatsappOtpTemplate,
+			OtpLang:      s.WhatsappOtpLang,
 		}
 	})
 	// The report cron only enqueues; this worker delivers in the background.
