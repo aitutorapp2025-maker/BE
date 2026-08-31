@@ -75,6 +75,7 @@ func (s *HomeworkService) TeachTask(ctx context.Context, studentID, homeworkID, 
 		return nil, false, fmt.Errorf("task not found in this homework")
 	}
 	if strings.TrimSpace(cached) != "" {
+		_ = s.homeworks.MarkTaskStarted(taskID) // no-op if already stamped
 		return &AskResult{Answer: cached, Grounded: true}, true, nil
 	}
 	st, err := s.students.FindByID(studentID)
@@ -93,6 +94,7 @@ func (s *HomeworkService) TeachTask(ctx context.Context, studentID, homeworkID, 
 		return nil, false, err
 	}
 	_ = s.homeworks.SaveTaskLesson(taskID, res.Answer) // cache for next time
+	_ = s.homeworks.MarkTaskStarted(taskID)            // history: time taken
 	return res, false, nil
 }
 
@@ -116,6 +118,7 @@ func (s *HomeworkService) TeachTaskStream(ctx context.Context, studentID, homewo
 		return nil, false, fmt.Errorf("task not found in this homework")
 	}
 	if strings.TrimSpace(cached) != "" {
+		_ = s.homeworks.MarkTaskStarted(taskID) // no-op if already stamped
 		if onDelta != nil {
 			onDelta(cached)
 		}
@@ -137,6 +140,7 @@ func (s *HomeworkService) TeachTaskStream(ctx context.Context, studentID, homewo
 		return nil, false, err
 	}
 	_ = s.homeworks.SaveTaskLesson(taskID, res.Answer) // cache for next time
+	_ = s.homeworks.MarkTaskStarted(taskID)            // history: time taken
 	return res, false, nil
 }
 
@@ -168,7 +172,26 @@ func (s *HomeworkService) AskDoubt(ctx context.Context, studentID, homeworkID, t
 		Group:            st.StudentGroup,
 		TeachingLanguage: st.TeachingLanguage,
 	}
-	return s.tutor.AnswerDoubt(ctx, topic, question, sc)
+	res, err := s.tutor.AnswerDoubt(ctx, topic, question, sc)
+	if err == nil && res != nil {
+		s.saveDoubt(studentID, homeworkID, taskID, question, res.Answer)
+	}
+	return res, err
+}
+
+// saveDoubt records an asked doubt + answer for the learning history
+// (best-effort — a failed save never breaks the answer).
+func (s *HomeworkService) saveDoubt(studentID, homeworkID, taskID uint, q, a string) {
+	if strings.TrimSpace(q) == "" && strings.TrimSpace(a) == "" {
+		return
+	}
+	_ = s.homeworks.CreateDoubt(&model.HomeworkDoubt{
+		HomeworkID: homeworkID,
+		TaskID:     taskID,
+		StudentID:  studentID,
+		Question:   strings.TrimSpace(q),
+		Answer:     strings.TrimSpace(a),
+	})
 }
 
 // AskDoubtImage answers a doubt the student sent as a PHOTO during a learning
@@ -199,7 +222,15 @@ func (s *HomeworkService) AskDoubtImage(ctx context.Context, studentID, homework
 		Group:            st.StudentGroup,
 		TeachingLanguage: st.TeachingLanguage,
 	}
-	return s.tutor.AnswerDoubtImage(ctx, topic, question, imageB64, mediaType, sc)
+	res, err := s.tutor.AnswerDoubtImage(ctx, topic, question, imageB64, mediaType, sc)
+	if err == nil && res != nil {
+		q := strings.TrimSpace(question)
+		if q == "" {
+			q = "(photo doubt)"
+		}
+		s.saveDoubt(studentID, homeworkID, taskID, q, res.Answer)
+	}
+	return res, err
 }
 
 // AskDoubtStream is the streaming variant of AskDoubt: it streams the answer via
@@ -230,7 +261,35 @@ func (s *HomeworkService) AskDoubtStream(ctx context.Context, studentID, homewor
 		Group:            st.StudentGroup,
 		TeachingLanguage: st.TeachingLanguage,
 	}
-	return s.tutor.AnswerDoubtStream(ctx, topic, question, sc, onDelta)
+	res, err := s.tutor.AnswerDoubtStream(ctx, topic, question, sc, onDelta)
+	if err == nil && res != nil {
+		s.saveDoubt(studentID, homeworkID, taskID, question, res.Answer)
+	}
+	return res, err
+}
+
+// TaskDetail returns everything the history needs to replay one task: the
+// lesson that was taught and every doubt asked with its answer.
+func (s *HomeworkService) TaskDetail(studentID, homeworkID, taskID uint) (lesson string, task *model.HomeworkTask, doubts []model.HomeworkDoubt, err error) {
+	hw, err := s.homeworks.GetForStudent(homeworkID, studentID)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	for i := range hw.Tasks {
+		if hw.Tasks[i].ID == taskID {
+			task = &hw.Tasks[i]
+			lesson = hw.Tasks[i].Lesson
+			break
+		}
+	}
+	if task == nil {
+		return "", nil, nil, fmt.Errorf("task not found in this homework")
+	}
+	doubts, err = s.homeworks.DoubtsForTask(taskID, studentID)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	return lesson, task, doubts, nil
 }
 
 // aiHomework is the JSON shape we ask Claude to return.

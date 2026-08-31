@@ -55,6 +55,11 @@ type HomeworkTask struct {
 	// ReminderSentAt marks the "time to study" push as sent (nil = not yet), so
 	// the minutely reminder job never notifies the same task twice.
 	ReminderSentAt *time.Time `json:"-"`
+	// StartedAt is stamped the first time the AI teaches this task and
+	// CompletedAt when the student marks it done — together they give the
+	// "how long did this task take" line in the learning history.
+	StartedAt   *time.Time `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -82,3 +87,19 @@ type HomeworkTest struct {
 
 // TableName sets the table name explicitly.
 func (HomeworkTest) TableName() string { return "homework_tests" }
+
+// HomeworkDoubt is one doubt the student asked while a task was being taught,
+// with the tutor's answer — kept so the learning history can replay exactly
+// what was asked and what the teacher said.
+type HomeworkDoubt struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	HomeworkID uint      `gorm:"index;not null" json:"homework_id"`
+	TaskID     uint      `gorm:"index;not null" json:"task_id"`
+	StudentID  uint      `gorm:"not null" json:"student_id"`
+	Question   string    `gorm:"type:text" json:"question"`
+	Answer     string    `gorm:"type:text" json:"answer"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// TableName sets the table name explicitly.
+func (HomeworkDoubt) TableName() string { return "homework_doubts" }

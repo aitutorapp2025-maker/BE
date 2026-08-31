@@ -320,6 +320,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Get("/report", homeworkHandler.Report)
 	// Mark a task done/skipped (execute one by one; skippable stages).
 	studentProtected.Put("/homework/:id/tasks/:taskId", homeworkHandler.SetTaskStatus)
+	// Learning history: replay one task — lesson + doubts asked + answers.
+	studentProtected.Get("/homework/:id/tasks/:taskId/detail", homeworkHandler.TaskDetail)
 	// Move a task's study time (re-arms its "time to study" push reminder).
 	studentProtected.Put("/homework/:id/tasks/:taskId/schedule", homeworkHandler.RescheduleTask)
 	// Teach one task (RAG lesson in the student's language).

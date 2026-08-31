@@ -46,6 +46,29 @@ func (r *HomeworkRepository) SaveTaskLesson(taskID uint, lesson string) error {
 		Update("lesson", lesson).Error
 }
 
+// MarkTaskStarted stamps started_at on a task the FIRST time it is taught
+// (later teaches keep the original start, so "time taken" stays honest).
+func (r *HomeworkRepository) MarkTaskStarted(taskID uint) error {
+	return r.db.Model(&model.HomeworkTask{}).
+		Where("id = ? AND started_at IS NULL", taskID).
+		Update("started_at", time.Now()).Error
+}
+
+// CreateDoubt saves one asked doubt + its answer for the learning history.
+func (r *HomeworkRepository) CreateDoubt(d *model.HomeworkDoubt) error {
+	return r.db.Create(d).Error
+}
+
+// DoubtsForTask returns a task's doubts (oldest first), scoped to the student.
+func (r *HomeworkRepository) DoubtsForTask(taskID, studentID uint) ([]model.HomeworkDoubt, error) {
+	var out []model.HomeworkDoubt
+	err := r.db.
+		Where("task_id = ? AND student_id = ?", taskID, studentID).
+		Order("created_at ASC").
+		Find(&out).Error
+	return out, err
+}
+
 // SaveTestQuestions caches the generated test JSON on a homework.
 func (r *HomeworkRepository) SaveTestQuestions(homeworkID uint, questions string) error {
 	return r.db.Model(&model.Homework{}).Where("id = ?", homeworkID).
@@ -94,9 +117,17 @@ func (r *HomeworkRepository) SetTaskStatus(taskID, studentID uint, status string
 	if err != nil {
 		return nil, err
 	}
+	updates := map[string]any{"status": status}
+	// Stamp the completion time for the learning history ("this task took N
+	// minutes"); reopening a task clears it.
+	if status == "done" {
+		updates["completed_at"] = time.Now()
+	} else {
+		updates["completed_at"] = nil
+	}
 	if err := r.db.Model(&model.HomeworkTask{}).
 		Where("id = ?", task.ID).
-		Update("status", status).Error; err != nil {
+		Updates(updates).Error; err != nil {
 		return nil, err
 	}
 

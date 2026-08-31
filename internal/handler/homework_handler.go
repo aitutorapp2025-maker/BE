@@ -629,3 +629,28 @@ func (h *HomeworkHandler) Get(c *fiber.Ctx) error {
 	}
 	return c.JSON(fiber.Map{"success": true, "homework": hw})
 }
+
+// TaskDetail returns one task's learning-history detail: the lesson that was
+// taught plus every doubt the student asked with the tutor's answer.
+// GET /api/v1/student/homework/:id/tasks/:taskId/detail
+func (h *HomeworkHandler) TaskDetail(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	id, _ := strconv.ParseUint(c.Params("id"), 10, 64)
+	taskID, _ := strconv.ParseUint(c.Params("taskId"), 10, 64)
+	if id == 0 || taskID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid homework or task id")
+	}
+	lesson, task, doubts, err := h.hw.TaskDetail(studentID, uint(id), uint(taskID))
+	if err != nil {
+		return fiber.NewError(fiber.StatusNotFound, "task not found")
+	}
+	return c.JSON(fiber.Map{
+		"success": true,
+		"lesson":  lesson,
+		"task":    task,
+		"doubts":  doubts,
+	})
+}
