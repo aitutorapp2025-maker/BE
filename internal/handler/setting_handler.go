@@ -10,6 +10,7 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/fcm"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/sms"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/wa"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -21,11 +22,13 @@ type SettingHandler struct {
 	// aiProbe verifies the configured AI keys (Voyage + Claude). nil when the
 	// tutoring pipeline isn't wired (e.g. pgvector missing).
 	aiProbe func(context.Context) error
+	// wa sends the "test WhatsApp" message with the saved Cloud API creds.
+	wa *wa.Provider
 }
 
-// NewSettingHandler builds a SettingHandler. aiProbe may be nil.
-func NewSettingHandler(settings *repository.SettingRepository, mailer *email.Publisher, smser *sms.Publisher, aiProbe func(context.Context) error) *SettingHandler {
-	return &SettingHandler{settings: settings, mailer: mailer, smser: smser, aiProbe: aiProbe}
+// NewSettingHandler builds a SettingHandler. aiProbe and waSender may be nil.
+func NewSettingHandler(settings *repository.SettingRepository, mailer *email.Publisher, smser *sms.Publisher, aiProbe func(context.Context) error, waSender *wa.Provider) *SettingHandler {
+	return &SettingHandler{settings: settings, mailer: mailer, smser: smser, aiProbe: aiProbe, wa: waSender}
 }
 
 type settingRequest struct {
@@ -588,4 +591,40 @@ func digitsOnly(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// TestWhatsApp sends a sample parent report over the WhatsApp Cloud API using
+// the SAVED credentials, so the admin can verify the integration end to end.
+// Sent directly (not queued) so any Meta error surfaces in the response.
+// POST /api/v1/admin/settings/test-whatsapp  { "to": "..." }
+func (h *SettingHandler) TestWhatsApp(c *fiber.Ctx) error {
+	if h.wa == nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "WhatsApp sender not wired")
+	}
+	var req testEmailRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	req.To = strings.TrimSpace(req.To)
+	if !isPhone(req.To) {
+		return fiber.NewError(fiber.StatusBadRequest, "a valid recipient phone number is required")
+	}
+	if !h.wa.Enabled() {
+		return fiber.NewError(fiber.StatusBadRequest,
+			"enable WhatsApp and save the token + phone number ID before sending a test")
+	}
+	msg := "📚 Vaha AI daily report — Test Student (" +
+		time.Now().Format("02 Jan 2006") + ")\n" +
+		"✅ Tasks completed: 3\n📝 Tests taken: 1\n🏆 Today's score: 8/10 (80%)\n" +
+		"Excellent work today — please appreciate them! 🌟\n\n" +
+		"(This is a test message — your WhatsApp settings are working.)"
+	ctx, cancel := context.WithTimeout(c.Context(), 25*time.Second)
+	defer cancel()
+	if err := h.wa.SendText(ctx, req.To, msg); err != nil {
+		return fiber.NewError(fiber.StatusBadGateway, "WhatsApp send failed: "+err.Error())
+	}
+	return c.JSON(fiber.Map{
+		"success": true,
+		"message": "Test WhatsApp sent to " + req.To + " — check the phone.",
+	})
 }

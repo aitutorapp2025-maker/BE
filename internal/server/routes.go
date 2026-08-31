@@ -13,6 +13,7 @@ import (
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/session"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/sms"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/wa"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -97,7 +98,22 @@ func registerRoutes(app *fiber.App, d Deps) {
 	razorpayClient := payment.NewClient(razorpayProvider)
 	// The plan handler auto-creates a Razorpay plan on create/price-change.
 	planHandler := handler.NewPlanHandler(planRepo, razorpayClient)
-	settingHandler := handler.NewSettingHandler(settingRepo, emailPublisher, smsPublisher, tutorService.Probe)
+	// WhatsApp sender for the admin "Send test WhatsApp" button (live config).
+	waSender := wa.NewProvider(func() wa.Config {
+		s, err := settingRepo.Get()
+		if err != nil {
+			return wa.Config{}
+		}
+		return wa.Config{
+			Enabled:      s.WhatsappEnabled,
+			Token:        s.WhatsappToken,
+			PhoneID:      s.WhatsappPhoneID,
+			Template:     s.WhatsappTemplate,
+			TemplateLang: s.WhatsappTemplateLang,
+			CountryCode:  s.SmsCountryCode,
+		}
+	})
+	settingHandler := handler.NewSettingHandler(settingRepo, emailPublisher, smsPublisher, tutorService.Probe, waSender)
 
 	landingHandler := handler.NewLandingHandler(
 		navRepo, statRepo, featureRepo, testimonialRepo, faqRepo, landingTextRepo, landingSeoRepo, settingRepo, cacheStore, chatClient, d.Redis)
@@ -478,6 +494,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	adminProtected.Post("/settings/test-email", settingHandler.TestEmail)
 	adminProtected.Post("/settings/test-sms", settingHandler.TestSMS)
 	adminProtected.Post("/settings/test-ai", settingHandler.TestAI)
+	adminProtected.Post("/settings/test-whatsapp", settingHandler.TestWhatsApp)
 
 	// Legal documents (Terms & Conditions, etc.) — admin editing.
 	adminProtected.Get("/legal/:key", legalHandler.Get)
