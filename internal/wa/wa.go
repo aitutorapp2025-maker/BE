@@ -109,28 +109,42 @@ func (p *Provider) SendText(ctx context.Context, phone, text string) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		graphBaseURL+strings.TrimSpace(cfg.PhoneID)+"/messages", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(cfg.Token))
+	attempt := func() error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			graphBaseURL+strings.TrimSpace(cfg.PhoneID)+"/messages", bytes.NewReader(body))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(cfg.Token))
 
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("whatsapp request: %w", err)
+		resp, err := p.client.Do(req)
+		if err != nil {
+			return fmt.Errorf("whatsapp request: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return nil
+		}
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		var e waError
+		if json.Unmarshal(raw, &e) == nil && e.Error != nil {
+			return fmt.Errorf("whatsapp %d (%s): %s", e.Error.Code, e.Error.Type, e.Error.Message)
+		}
+		return fmt.Errorf("whatsapp status %d: %s", resp.StatusCode, string(raw))
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return nil
+
+	err = attempt()
+	// Meta 133010: the number was added to the account but never REGISTERED
+	// for the Cloud API. Auto-register once (default PIN) and retry the send.
+	if err != nil && (strings.Contains(err.Error(), "133010") ||
+		strings.Contains(strings.ToLower(err.Error()), "register")) {
+		if rerr := p.register(ctx, cfg); rerr != nil {
+			return fmt.Errorf("%v — auto-register also failed: %v", err, rerr)
+		}
+		err = attempt()
 	}
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	var e waError
-	if json.Unmarshal(raw, &e) == nil && e.Error != nil {
-		return fmt.Errorf("whatsapp %d (%s): %s", e.Error.Code, e.Error.Type, e.Error.Message)
-	}
-	return fmt.Errorf("whatsapp status %d: %s", resp.StatusCode, string(raw))
+	return err
 }
 
 // normalizePhone strips everything but digits and prefixes the country code
@@ -155,4 +169,36 @@ func normalizePhone(phone, countryCode string) string {
 	default:
 		return ""
 	}
+}
+
+// register performs the one-time Cloud API registration for the phone number
+// (Meta error 133010 "not registered"). Uses the default two-step PIN 000000;
+// if the owner set a custom PIN in WhatsApp Manager this fails and the real
+// error is surfaced to the admin.
+func (p *Provider) register(ctx context.Context, cfg Config) error {
+	body, _ := json.Marshal(map[string]any{
+		"messaging_product": "whatsapp",
+		"pin":               "000000",
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		graphBaseURL+strings.TrimSpace(cfg.PhoneID)+"/register", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(cfg.Token))
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("whatsapp register: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	var e waError
+	if json.Unmarshal(raw, &e) == nil && e.Error != nil {
+		return fmt.Errorf("whatsapp register %d: %s", e.Error.Code, e.Error.Message)
+	}
+	return fmt.Errorf("whatsapp register status %d: %s", resp.StatusCode, string(raw))
 }
