@@ -6,6 +6,8 @@ package scheduler
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
@@ -93,24 +95,13 @@ func (s *Scheduler) runDue(now time.Time) {
 		if err != nil || cj == nil || !cj.Enabled {
 			continue
 		}
-		// Hourly jobs run at most once per hour (the tick itself may be faster).
-		if j.Schedule == "hourly" && cj.LastRunAt != nil && now.Sub(*cj.LastRunAt) < time.Hour {
-			continue
+		// The ADMIN's schedule (cron panel) wins; the code schedule is only the
+		// default the row was seeded with.
+		schedule := strings.TrimSpace(cj.Schedule)
+		if schedule == "" {
+			schedule = j.Schedule
 		}
-		// Daily jobs run at most once per calendar day.
-		if j.Schedule == "daily" && cj.LastRunAt != nil && sameDay(*cj.LastRunAt, now) {
-			continue
-		}
-		// "daily@H" jobs run once per day, but never before hour H (local time) —
-		// e.g. "daily@19" sends the parents' evening report after 7 PM.
-		if h, ok := dailyAtHour(j.Schedule); ok {
-			if now.Hour() < h || (cj.LastRunAt != nil && sameDay(*cj.LastRunAt, now)) {
-				continue
-			}
-		}
-		// "everyNdays" jobs run at most once per N days (N*24h since the last run).
-		if days, ok := everyNDays(j.Schedule); ok && cj.LastRunAt != nil &&
-			now.Sub(*cj.LastRunAt) < time.Duration(days)*24*time.Hour {
+		if !scheduleDue(schedule, cj.LastRunAt, now) {
 			continue
 		}
 		result, rerr := j.Run(now)
@@ -126,6 +117,120 @@ func (s *Scheduler) runDue(now time.Time) {
 			s.log.Errorf("cron %s: record run: %v", j.Key, err)
 		}
 	}
+}
+
+// scheduleDue reports whether a job with the given schedule should run now.
+// Supports the legacy tokens (minutely / hourly / daily / daily@H /
+// everyNdays) and standard 5-field cron expressions ("m h dom mon dow").
+func scheduleDue(schedule string, lastRun *time.Time, now time.Time) bool {
+	switch {
+	case schedule == "minutely" || schedule == "":
+		return true
+	case schedule == "hourly":
+		return lastRun == nil || now.Sub(*lastRun) >= time.Hour
+	case schedule == "daily":
+		return lastRun == nil || !sameDay(*lastRun, now)
+	}
+	if h, ok := dailyAtHour(schedule); ok {
+		return now.Hour() >= h && (lastRun == nil || !sameDay(*lastRun, now))
+	}
+	if days, ok := everyNDays(schedule); ok {
+		return lastRun == nil || now.Sub(*lastRun) >= time.Duration(days)*24*time.Hour
+	}
+	if expr, ok := parseCron(schedule); ok {
+		// The expression matches specific minutes; never double-run within the
+		// same minute (the tick is minutely, but Start also runs at boot).
+		if lastRun != nil && lastRun.Truncate(time.Minute).Equal(now.Truncate(time.Minute)) {
+			return false
+		}
+		return expr.matches(now)
+	}
+	return false // unknown schedule — safer to not run than to spam
+}
+
+// ValidSchedule reports whether an admin-entered schedule string is usable.
+func ValidSchedule(schedule string) bool {
+	s := strings.TrimSpace(schedule)
+	if s == "minutely" || s == "hourly" || s == "daily" {
+		return true
+	}
+	if _, ok := dailyAtHour(s); ok {
+		return true
+	}
+	if _, ok := everyNDays(s); ok {
+		return true
+	}
+	_, ok := parseCron(s)
+	return ok
+}
+
+// cronExpr is a parsed 5-field cron expression: minute hour day-of-month
+// month day-of-week. Supports "*", numbers, comma lists, ranges "a-b" and
+// steps "*/n" or "a-b/n".
+type cronExpr struct {
+	minute, hour, dom, mon, dow map[int]bool
+}
+
+func (e cronExpr) matches(t time.Time) bool {
+	return e.minute[t.Minute()] && e.hour[t.Hour()] && e.dom[t.Day()] &&
+		e.mon[int(t.Month())] && e.dow[int(t.Weekday())]
+}
+
+func parseCron(s string) (cronExpr, bool) {
+	fields := strings.Fields(s)
+	if len(fields) != 5 {
+		return cronExpr{}, false
+	}
+	bounds := [5][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 6}}
+	sets := make([]map[int]bool, 5)
+	for i, f := range fields {
+		set, ok := parseCronField(f, bounds[i][0], bounds[i][1])
+		if !ok {
+			return cronExpr{}, false
+		}
+		sets[i] = set
+	}
+	return cronExpr{
+		minute: sets[0], hour: sets[1], dom: sets[2], mon: sets[3], dow: sets[4],
+	}, true
+}
+
+func parseCronField(f string, lo, hi int) (map[int]bool, bool) {
+	out := map[int]bool{}
+	for _, part := range strings.Split(f, ",") {
+		step := 1
+		if i := strings.IndexByte(part, '/'); i >= 0 {
+			n, err := strconv.Atoi(part[i+1:])
+			if err != nil || n <= 0 {
+				return nil, false
+			}
+			step = n
+			part = part[:i]
+		}
+		from, to := lo, hi
+		switch {
+		case part == "*" || part == "":
+			// full range
+		case strings.Contains(part, "-"):
+			bits := strings.SplitN(part, "-", 2)
+			a, err1 := strconv.Atoi(bits[0])
+			b, err2 := strconv.Atoi(bits[1])
+			if err1 != nil || err2 != nil || a < lo || b > hi || a > b {
+				return nil, false
+			}
+			from, to = a, b
+		default:
+			n, err := strconv.Atoi(part)
+			if err != nil || n < lo || n > hi {
+				return nil, false
+			}
+			from, to = n, n
+		}
+		for v := from; v <= to; v += step {
+			out[v] = true
+		}
+	}
+	return out, len(out) > 0
 }
 
 // everyNDays parses an "everyNdays" schedule (e.g. "every3days") into N. Returns

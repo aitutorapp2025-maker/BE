@@ -232,6 +232,52 @@ func TaskRemindersJob(
 	}
 }
 
+// AutopayNudgeJob pushes a daily "start for just ₹5" reminder to every
+// student who hasn't set up the UPI-AutoPay mandate yet. Default: once a day
+// at 10 AM; the admin can retime it from the cron panel (e.g. "0 18 * * *").
+func AutopayNudgeJob(
+	students *repository.StudentRepository,
+	devices *repository.DeviceTokenRepository,
+	push fcm.Pusher,
+) Job {
+	return Job{
+		Key:      "autopay_nudge",
+		Schedule: "daily@10",
+		Run: func(now time.Time) (string, error) {
+			ids, err := students.IDsWithoutAutopay(5000)
+			if err != nil {
+				return "", err
+			}
+			if len(ids) == 0 {
+				return "0 students without autopay", nil
+			}
+			if !push.Enabled() {
+				return fmt.Sprintf("%d students but FCM not configured (0 sent)", len(ids)), nil
+			}
+			tokens, err := devices.TokensForStudents(ids)
+			if err != nil {
+				return "", err
+			}
+			if len(tokens) == 0 {
+				return fmt.Sprintf("%d students, no device tokens", len(ids)), nil
+			}
+			n, invalid, err := push.SendToTokens(context.Background(), tokens,
+				"Start the AI Tutor for just ₹5 🎓",
+				"Enable UPI AutoPay in one tap — daily AI lessons, homework help "+
+					"and tests in your language. Daily practice = higher scores!",
+				"",
+				map[string]string{"type": "autopay_nudge"})
+			if len(invalid) > 0 {
+				_ = devices.DeleteTokens(invalid)
+			}
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("nudged %d device(s) of %d students", n, len(ids)), nil
+		},
+	}
+}
+
 // TaskTimeUpJob pushes "time's up" when a STARTED task's planned minutes run
 // out and the task still isn't completed — so a student who left the app
 // mid-lesson gets called back. Runs minutely; each task is pushed at most once.

@@ -27,6 +27,20 @@ func (r *StudentRepository) List() ([]model.Student, error) {
 
 // Count returns the total number of (non-deleted) students. Cheaper than
 // loading every row just to take len().
+// IDsWithoutAutopay returns the ids of students who have NOT set up the
+// UPI-AutoPay mandate yet — the audience for the daily "start for ₹5" nudge.
+func (r *StudentRepository) IDsWithoutAutopay(limit int) ([]uint, error) {
+	if limit <= 0 {
+		limit = 5000
+	}
+	var ids []uint
+	err := r.db.Model(&model.Student{}).
+		Where("autopay_active = ?", false).
+		Limit(limit).
+		Pluck("id", &ids).Error
+	return ids, err
+}
+
 func (r *StudentRepository) Count() (int64, error) {
 	var n int64
 	err := r.db.Model(&model.Student{}).Count(&n).Error

@@ -62,8 +62,9 @@ func (r *CronRepository) RecordRun(key, status, result string, at time.Time) err
 }
 
 // Ensure inserts the job if its key is missing (preserving an existing row's
-// enabled flag / metadata). Name/description/schedule are refreshed so code
-// changes to those show up without a destructive migration.
+// enabled flag / metadata). Name/description are refreshed so code changes
+// show up; the SCHEDULE is only seeded on create — the admin owns it after
+// that (editable from the cron panel), so boot must never overwrite it.
 func (r *CronRepository) Ensure(j model.CronJob) error {
 	var existing model.CronJob
 	err := r.db.Where("key = ?", j.Key).First(&existing).Error
@@ -77,6 +78,18 @@ func (r *CronRepository) Ensure(j model.CronJob) error {
 		Updates(map[string]any{
 			"name":        j.Name,
 			"description": j.Description,
-			"schedule":    j.Schedule,
 		}).Error
+}
+
+// SetSchedule updates a job's schedule (admin-edited; validated by the caller).
+func (r *CronRepository) SetSchedule(key, schedule string) error {
+	res := r.db.Model(&model.CronJob{}).Where("key = ?", key).
+		Update("schedule", schedule)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
