@@ -438,6 +438,11 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Credits: top up a student and view their credit history.
 	students.Post("/:id/recharge", creditHandler.Recharge)
 	students.Get("/:id/ledger", creditHandler.Ledger)
+	// AutoPay status + full Razorpay payment history (mandate charge, its
+	// refund, renewals) with payment ids — powered by the webhook records.
+	studentPaymentsHandler := handler.NewAdminStudentPaymentsHandler(
+		studentRepo, repository.NewPaymentEventRepository(d.DB))
+	students.Get("/:id/payments", studentPaymentsHandler.Get)
 
 	// Classes CRUD.
 	classes := adminProtected.Group("/classes")

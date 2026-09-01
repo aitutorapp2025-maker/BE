@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/aitutorapp2025-maker/vaha-backend/pkg/logger"
 	"github.com/gofiber/fiber/v2"
@@ -96,4 +97,47 @@ func (h *PaymentHandler) Webhook(c *fiber.Ctx) error {
 		h.log.Errorf("razorpay webhook: %v", err)
 	}
 	return c.JSON(fiber.Map{"success": true})
+}
+
+// AdminStudentPaymentsHandler serves the admin's per-student payment view:
+// the AutoPay/mandate status plus every processed Razorpay event (with its
+// payment id and amount) — mandate charge, refunds, renewals.
+type AdminStudentPaymentsHandler struct {
+	students *repository.StudentRepository
+	events   *repository.PaymentEventRepository
+}
+
+// NewAdminStudentPaymentsHandler builds an AdminStudentPaymentsHandler.
+func NewAdminStudentPaymentsHandler(students *repository.StudentRepository,
+	events *repository.PaymentEventRepository) *AdminStudentPaymentsHandler {
+	return &AdminStudentPaymentsHandler{students: students, events: events}
+}
+
+// Get returns one student's autopay + payment history.
+// GET /api/v1/admin/students/:id/payments
+func (h *AdminStudentPaymentsHandler) Get(c *fiber.Ctx) error {
+	id, err := parseID(c)
+	if err != nil {
+		return err
+	}
+	st, err := h.students.FindByID(id)
+	if err != nil {
+		return notFoundOrInternal(err, "student")
+	}
+	events, err := h.events.ListForStudent(st.ID, 200)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to load payment events")
+	}
+	return c.JSON(fiber.Map{
+		"success": true,
+		"autopay": fiber.Map{
+			"active":               st.AutopayActive,
+			"plan":                 st.Plan,
+			"pay_status":           st.PayStatus,
+			"trial_ends_at":        st.TrialEndsAt,
+			"razorpay_customer_id": st.RazorpayCustomerID,
+			"razorpay_token_id":    st.RazorpayTokenID,
+		},
+		"events": events,
+	})
 }
