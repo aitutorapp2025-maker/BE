@@ -1,7 +1,11 @@
 package repository
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"gorm.io/gorm"
@@ -20,10 +24,14 @@ func NewWaMessageRepository(db *gorm.DB) *WaMessageRepository {
 }
 
 // Save inserts a message; duplicate wa_msg_id rows (webhook redelivery) are
-// silently ignored.
+// silently ignored. Outgoing rows have no Meta id — they get a generated
+// local id, because wa_msg_id is UNIQUE and a second empty '' would collide
+// (which silently blocked every outgoing record after the first).
 func (r *WaMessageRepository) Save(m *model.WaMessage) error {
 	if strings.TrimSpace(m.WaMsgID) == "" {
-		return r.db.Create(m).Error
+		b := make([]byte, 8)
+		_, _ = rand.Read(b)
+		m.WaMsgID = fmt.Sprintf("local-%d-%s", time.Now().UnixNano(), hex.EncodeToString(b))
 	}
 	return r.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "wa_msg_id"}},
