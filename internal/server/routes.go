@@ -347,6 +347,13 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Razorpay's servers, which can't do our E2E handshake). Authenticated by the
 	// HMAC-SHA256 signature in X-Razorpay-Signature, verified in the handler.
 	v1.Post("/payments/webhook", paymentHandler.Webhook)
+	// Meta WhatsApp webhook — PUBLIC + plaintext (called by Meta's servers).
+	// GET is the verification handshake; POST enqueues incoming messages on
+	// RabbitMQ for the inbox worker.
+	waInboxHandler := handler.NewWaInboxHandler(
+		repository.NewWaMessageRepository(d.DB), settingRepo, waPublisher, d.MQ)
+	v1.Get("/wa/webhook", waInboxHandler.Verify)
+	v1.Post("/wa/webhook", waInboxHandler.Receive)
 
 	// Dev-only: simulate a server error to test error alerting.
 	if !d.Cfg.IsProduction() {
@@ -443,6 +450,13 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentPaymentsHandler := handler.NewAdminStudentPaymentsHandler(
 		studentRepo, repository.NewPaymentEventRepository(d.DB))
 	students.Get("/:id/payments", studentPaymentsHandler.Get)
+
+	// WhatsApp inbox — chat threads on the brand number (incoming via the Meta
+	// webhook + everything we send), and queue a reply/promotional message.
+	waAdmin := adminProtected.Group("/wa")
+	waAdmin.Get("/conversations", waInboxHandler.Conversations)
+	waAdmin.Get("/thread/:phone", waInboxHandler.Thread)
+	waAdmin.Post("/send", waInboxHandler.Send)
 
 	// Classes CRUD.
 	classes := adminProtected.Group("/classes")

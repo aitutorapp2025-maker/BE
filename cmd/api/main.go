@@ -281,9 +281,15 @@ func main() {
 		}
 	})
 	// The report cron only enqueues; this worker delivers in the background.
+	// Sends are recorded in the inbox so the admin chat shows both directions;
+	// the inbox worker stores incoming webhook messages the same way.
 	waPublisher := wa.NewPublisher(mq, waSender.Enabled)
-	if err := worker.StartWaWorker(mq, waSender, log); err != nil {
+	waMessageRepo := repository.NewWaMessageRepository(db)
+	if err := worker.StartWaWorker(mq, waSender, waMessageRepo, log); err != nil {
 		log.Errorf("wa worker: %v", err)
+	}
+	if err := worker.StartWaInboxWorker(mq, waMessageRepo, log); err != nil {
+		log.Errorf("wa inbox worker: %v", err)
 	}
 
 	homeworkRepo := repository.NewHomeworkRepository(db)

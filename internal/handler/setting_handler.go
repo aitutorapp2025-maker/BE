@@ -105,6 +105,7 @@ type settingRequest struct {
 	WhatsappOtpEnabled   bool   `json:"whatsapp_otp_enabled"`
 	WhatsappOtpTemplate  string `json:"whatsapp_otp_template"`
 	WhatsappOtpLang      string `json:"whatsapp_otp_lang"`
+	WhatsappWebhookToken string `json:"whatsapp_webhook_token"`
 
 	// CAPTCHA. Secret is write-only.
 	CaptchaEnabled  bool   `json:"captcha_enabled"`
@@ -384,6 +385,7 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.WhatsappOtpEnabled = req.WhatsappOtpEnabled
 	s.WhatsappOtpTemplate = strings.TrimSpace(req.WhatsappOtpTemplate)
 	s.WhatsappOtpLang = strings.TrimSpace(req.WhatsappOtpLang)
+	s.WhatsappWebhookToken = strings.TrimSpace(req.WhatsappWebhookToken)
 	if strings.TrimSpace(req.WhatsappToken) != "" {
 		s.WhatsappToken = strings.TrimSpace(req.WhatsappToken)
 	}

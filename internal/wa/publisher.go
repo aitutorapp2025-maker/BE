@@ -9,6 +9,10 @@ import (
 // QueueWa is the RabbitMQ queue name for outgoing WhatsApp messages.
 const QueueWa = "wa.send"
 
+// QueueWaInbox carries raw Meta webhook payloads (incoming customer
+// messages) from the HTTP handler to the inbox worker.
+const QueueWaInbox = "wa.inbox"
+
 // Job is one WhatsApp message, published to RabbitMQ and delivered by the
 // WhatsApp worker in the background (same pattern as email/SMS/push).
 // Kind "otp" sends the Authentication template carrying Code; anything else

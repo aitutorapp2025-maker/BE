@@ -111,6 +111,9 @@ type Setting struct {
 	WhatsappOtpEnabled  bool   `gorm:"not null;default:false" json:"whatsapp_otp_enabled"`
 	WhatsappOtpTemplate string `gorm:"size:120" json:"whatsapp_otp_template"`
 	WhatsappOtpLang     string `gorm:"size:12" json:"whatsapp_otp_lang"`
+	// WhatsappWebhookToken is the verify token typed into Meta's webhook setup
+	// (callback URL /api/v1/wa/webhook) so incoming messages reach the inbox.
+	WhatsappWebhookToken string `gorm:"size:80" json:"whatsapp_webhook_token"`
 
 	// CAPTCHA (bot protection on the public contact form). Secret is never
 	// serialized to the client; site key is public.

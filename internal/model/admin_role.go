@@ -57,6 +57,7 @@ const (
 	PermAuditLogs   = "audit_logs"
 	PermAdminUsers  = "admin_users"
 	PermBanners     = "banners"
+	PermWhatsApp    = "whatsapp"
 )
 
 // Settings-tab permission keys. (The Account tab — the admin's own password —
@@ -101,6 +102,7 @@ var AllPermissions = []PermDef{
 	{PermAuditLogs, "Audit logs", "Side menu"},
 	{PermAdminUsers, "Admin users & roles", "Side menu"},
 	{PermBanners, "Home banners", "Side menu"},
+	{PermWhatsApp, "WhatsApp inbox", "Side menu"},
 
 	{PermSetOrganisation, "Organisation", "Settings tabs"},
 	{PermSetPreferences, "Preferences", "Settings tabs"},
@@ -188,6 +190,8 @@ func RequiredPermsForAdminRoute(method, seg string) []string {
 		return []string{PermCrons}
 	case "notifications":
 		return []string{PermNotify}
+	case "wa":
+		return []string{PermWhatsApp}
 	case "audit-logs":
 		return []string{PermAuditLogs}
 	case "referrals":
