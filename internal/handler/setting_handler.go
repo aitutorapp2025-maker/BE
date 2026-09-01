@@ -8,6 +8,7 @@ import (
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/email"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/fcm"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/sms"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/wa"
@@ -24,11 +25,13 @@ type SettingHandler struct {
 	aiProbe func(context.Context) error
 	// wa sends the "test WhatsApp" message with the saved Cloud API creds.
 	wa *wa.Provider
+	// waMessages records direct sends so they show in the admin WhatsApp chat.
+	waMessages *repository.WaMessageRepository
 }
 
 // NewSettingHandler builds a SettingHandler. aiProbe and waSender may be nil.
-func NewSettingHandler(settings *repository.SettingRepository, mailer *email.Publisher, smser *sms.Publisher, aiProbe func(context.Context) error, waSender *wa.Provider) *SettingHandler {
-	return &SettingHandler{settings: settings, mailer: mailer, smser: smser, aiProbe: aiProbe, wa: waSender}
+func NewSettingHandler(settings *repository.SettingRepository, mailer *email.Publisher, smser *sms.Publisher, aiProbe func(context.Context) error, waSender *wa.Provider, waMessages *repository.WaMessageRepository) *SettingHandler {
+	return &SettingHandler{settings: settings, mailer: mailer, smser: smser, aiProbe: aiProbe, wa: waSender, waMessages: waMessages}
 }
 
 type settingRequest struct {
@@ -631,6 +634,7 @@ func (h *SettingHandler) TestWhatsApp(c *fiber.Ctx) error {
 	if err := h.wa.SendText(ctx, req.To, msg); err != nil {
 		return fiber.NewError(fiber.StatusBadGateway, "WhatsApp send failed: "+err.Error())
 	}
+	h.recordWaSend(req.To, msg)
 	return c.JSON(fiber.Map{
 		"success": true,
 		"message": "Test WhatsApp sent to " + req.To + " — check the phone.",
@@ -658,8 +662,30 @@ func (h *SettingHandler) TestWhatsAppOTP(c *fiber.Ctx) error {
 	if err := h.wa.SendOTP(ctx, req.To, "123456"); err != nil {
 		return fiber.NewError(fiber.StatusBadGateway, "WhatsApp OTP send failed: "+err.Error())
 	}
+	h.recordWaSend(req.To, "🔐 Test login code (123456) sent")
 	return c.JSON(fiber.Map{
 		"success": true,
 		"message": "Test WhatsApp OTP (123456) sent to " + req.To + " — check the phone.",
+	})
+}
+
+// recordWaSend stores a directly-sent WhatsApp message (test buttons) in the
+// inbox so the admin chat shows every outgoing message. Best-effort.
+func (h *SettingHandler) recordWaSend(phone, text string) {
+	if h.waMessages == nil {
+		return
+	}
+	digits := make([]rune, 0, len(phone))
+	for _, r := range phone {
+		if r >= '0' && r <= '9' {
+			digits = append(digits, r)
+		}
+	}
+	d := string(digits)
+	if len(d) == 10 {
+		d = "91" + d
+	}
+	_ = h.waMessages.Save(&model.WaMessage{
+		Phone: d, Direction: "out", MsgType: "text", Text: text,
 	})
 }

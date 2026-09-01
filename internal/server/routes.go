@@ -117,7 +117,7 @@ func registerRoutes(app *fiber.App, d Deps) {
 	razorpayClient := payment.NewClient(razorpayProvider)
 	// The plan handler auto-creates a Razorpay plan on create/price-change.
 	planHandler := handler.NewPlanHandler(planRepo, razorpayClient)
-	settingHandler := handler.NewSettingHandler(settingRepo, emailPublisher, smsPublisher, tutorService.Probe, waSender)
+	settingHandler := handler.NewSettingHandler(settingRepo, emailPublisher, smsPublisher, tutorService.Probe, waSender, repository.NewWaMessageRepository(d.DB))
 
 	landingHandler := handler.NewLandingHandler(
 		navRepo, statRepo, featureRepo, testimonialRepo, faqRepo, landingTextRepo, landingSeoRepo, settingRepo, cacheStore, chatClient, d.Redis)
