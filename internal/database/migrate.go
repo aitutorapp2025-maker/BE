@@ -48,9 +48,6 @@ func Migrate(db *gorm.DB) error {
 		&model.HomeworkTest{},
 		&model.HomeworkDoubt{},
 		&model.WaMessage{},
-		&model.WaTemplate{},
-		&model.WaCampaign{},
-		&model.WaCampaignRecipient{},
 		&model.AuditLog{},
 		&model.Referral{},
 		&model.Notification{},
@@ -60,6 +57,20 @@ func Migrate(db *gorm.DB) error {
 		&model.CrashDaily{},
 		&model.SupportTicket{},
 		&model.HomeBanner{},
+	)
+}
+
+// MigrateWhatsApp migrates the WhatsApp broadcast tables (templates, campaigns,
+// per-recipient rows). It is SEPARATE from Migrate and called non-fatally at
+// boot: if it fails on the live DB (e.g. a stale/partial table from an earlier
+// attempt), the core backend still starts and the WhatsApp campaign feature
+// simply stays unavailable until the migration error is fixed — instead of the
+// whole server crash-looping. The exact error is returned so the caller logs it.
+func MigrateWhatsApp(db *gorm.DB) error {
+	return db.AutoMigrate(
+		&model.WaTemplate{},
+		&model.WaCampaign{},
+		&model.WaCampaignRecipient{},
 	)
 }
 
