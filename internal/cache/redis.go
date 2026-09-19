@@ -15,6 +15,7 @@ import (
 func Connect(cfg config.Config) (*redis.Client, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:     cfg.Redis.Addr(),
+		Username: cfg.Redis.Username, // Redis 6+ ACL user (empty = default user)
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	})

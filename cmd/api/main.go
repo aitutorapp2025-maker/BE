@@ -49,6 +49,16 @@ func main() {
 	}
 	log.Infof("database migrated")
 
+	// WhatsApp broadcast tables migrate separately and NON-fatally: a failure
+	// here (e.g. a stale/partial table on the live DB) disables only the WhatsApp
+	// campaign feature instead of crash-looping the whole backend. The exact
+	// error is logged so it can be diagnosed from pm2 logs.
+	if err := database.MigrateWhatsApp(db); err != nil {
+		log.Errorf("whatsapp tables NOT migrated — campaign feature disabled until fixed: %v", err)
+	} else {
+		log.Infof("whatsapp broadcast tables migrated")
+	}
+
 	// Performance indexes (composite indexes on hot queries). Best-effort — a
 	// failure here is a warning, not fatal.
 	if err := database.CreateIndexes(db); err != nil {

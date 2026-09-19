@@ -142,6 +142,7 @@ type DBConfig struct {
 type RedisConfig struct {
 	Host     string
 	Port     string
+	Username string // Redis 6+ ACL user (empty = default user)
 	Password string
 	DB       int
 }
@@ -196,6 +197,7 @@ func Load() Config {
 		Redis: RedisConfig{
 			Host:     env("REDIS_HOST", "127.0.0.1"),
 			Port:     env("REDIS_PORT", "6379"),
+			Username: env("REDIS_USERNAME", ""),
 			Password: env("REDIS_PASSWORD", ""),
 			DB:       envInt("REDIS_DB", 0),
 		},
