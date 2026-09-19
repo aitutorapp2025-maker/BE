@@ -103,6 +103,13 @@ type Setting struct {
 	WhatsappEnabled      bool   `gorm:"not null;default:false" json:"whatsapp_enabled"`
 	WhatsappToken        string `gorm:"size:600" json:"-"`
 	WhatsappPhoneID      string `gorm:"size:60" json:"whatsapp_phone_id"`
+	// WhatsappWABAID is the WhatsApp Business Account ID — required to list the
+	// approved message templates (Graph: GET /{WABA_ID}/message_templates) used
+	// by broadcast campaigns. Distinct from the phone number ID above.
+	WhatsappWABAID       string `gorm:"size:60" json:"whatsapp_waba_id"`
+	// WhatsappAppID is the Meta App ID, needed for the Resumable Upload API when
+	// CREATING image-header templates from the app (sample-image header_handle).
+	WhatsappAppID        string `gorm:"size:60" json:"whatsapp_app_id"`
 	WhatsappTemplate     string `gorm:"size:120" json:"whatsapp_template"`
 	WhatsappTemplateLang string `gorm:"size:12" json:"whatsapp_template_lang"` // e.g. en / ta
 	WhatsappTokenSet     bool   `gorm:"-" json:"whatsapp_token_set"`

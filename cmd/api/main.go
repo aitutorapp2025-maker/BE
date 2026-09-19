@@ -285,7 +285,8 @@ func main() {
 	// the inbox worker stores incoming webhook messages the same way.
 	waPublisher := wa.NewPublisher(mq, waSender.Enabled)
 	waMessageRepo := repository.NewWaMessageRepository(db)
-	if err := worker.StartWaWorker(mq, waSender, waMessageRepo, log); err != nil {
+	waCampaignRepo := repository.NewWaCampaignRepository(db)
+	if err := worker.StartWaWorker(mq, waSender, waMessageRepo, waCampaignRepo, rdb, log); err != nil {
 		log.Errorf("wa worker: %v", err)
 	}
 	if err := worker.StartWaInboxWorker(mq, waMessageRepo, log); err != nil {
@@ -330,6 +331,9 @@ func main() {
 		{scheduler.ParentDailyReportJob(homeworkRepo, studentRepo, waPublisher),
 			"Parents' daily WhatsApp report",
 			"Once a day after 7 PM, WhatsApps each parent their child's study report — tasks completed, tests taken and the day's score (needs WhatsApp configured in Settings)."},
+		{scheduler.WaCampaignDispatchJob(waCampaignRepo, repository.NewWaTemplateRepository(db), waSender, waPublisher),
+			"Dispatch scheduled WhatsApp campaigns",
+			"Every minute, sends any WhatsApp campaign whose scheduled time has arrived."},
 	}
 	for _, r := range registrations {
 		if err := cronRepo.Ensure(model.CronJob{

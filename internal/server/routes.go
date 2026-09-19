@@ -86,6 +86,8 @@ func registerRoutes(app *fiber.App, d Deps) {
 			Enabled:      s.WhatsappEnabled,
 			Token:        s.WhatsappToken,
 			PhoneID:      s.WhatsappPhoneID,
+			WABAID:       s.WhatsappWABAID,
+			AppID:        s.WhatsappAppID,
 			Template:     s.WhatsappTemplate,
 			TemplateLang: s.WhatsappTemplateLang,
 			CountryCode:  s.SmsCountryCode,
@@ -457,6 +459,28 @@ func registerRoutes(app *fiber.App, d Deps) {
 	waAdmin.Get("/conversations", waInboxHandler.Conversations)
 	waAdmin.Get("/thread/:phone", waInboxHandler.Thread)
 	waAdmin.Post("/send", waInboxHandler.Send)
+	// WhatsApp templates — local mirror (List) synced from Meta (Sync), plus
+	// create / edit / delete which call Meta then update the local row.
+	waTemplateHandler := handler.NewWaTemplateHandler(waSender, repository.NewWaTemplateRepository(d.DB))
+	waAdmin.Get("/templates", waTemplateHandler.List)
+	waAdmin.Post("/templates", waTemplateHandler.Create)
+	waAdmin.Post("/templates/sync", waTemplateHandler.Sync)
+	waAdmin.Put("/templates/:id", waTemplateHandler.Edit)
+	waAdmin.Post("/templates/:id/image", waTemplateHandler.SetImage)
+	waAdmin.Delete("/templates/:id", waTemplateHandler.Delete)
+	// WhatsApp broadcast campaigns — Excel upload, bulk send, progress, retry.
+	waCampaignHandler := handler.NewWaCampaignHandler(
+		waSender, waPublisher, repository.NewWaCampaignRepository(d.DB),
+		repository.NewWaTemplateRepository(d.DB))
+	waAdmin.Get("/campaign", waCampaignHandler.List)
+	waAdmin.Get("/campaign/sample", waCampaignHandler.SampleExcel)
+	waAdmin.Post("/campaign/parse-excel", waCampaignHandler.ParseExcel)
+	waAdmin.Post("/campaign", waCampaignHandler.Create)
+	waAdmin.Get("/campaign/:id", waCampaignHandler.Get)
+	waAdmin.Put("/campaign/:id", waCampaignHandler.Rename)
+	waAdmin.Delete("/campaign/:id", waCampaignHandler.Delete)
+	waAdmin.Post("/campaign/:id/retry", waCampaignHandler.Retry)
+	waAdmin.Post("/campaign/:id/resend", waCampaignHandler.Resend)
 
 	// Classes CRUD.
 	classes := adminProtected.Group("/classes")

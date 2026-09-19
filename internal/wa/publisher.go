@@ -15,13 +15,23 @@ const QueueWaInbox = "wa.inbox"
 
 // Job is one WhatsApp message, published to RabbitMQ and delivered by the
 // WhatsApp worker in the background (same pattern as email/SMS/push).
-// Kind "otp" sends the Authentication template carrying Code; anything else
-// sends Text as a normal message.
+//   - Kind "otp"      → Authentication template carrying Code
+//   - Kind "template" → a broadcast/campaign template send (Template + Lang +
+//     Params + optional HeaderImageID); CampaignID/RecipientID let the worker
+//     update per-recipient delivery status.
+//   - anything else   → free-form Text
 type Job struct {
 	Phone string `json:"phone"`
 	Text  string `json:"text"`
 	Kind  string `json:"kind,omitempty"`
 	Code  string `json:"code,omitempty"`
+	// Template (campaign) fields:
+	Template      string   `json:"template,omitempty"`
+	Lang          string   `json:"lang,omitempty"`
+	Params        []string `json:"params,omitempty"`
+	HeaderImageID string   `json:"header_image_id,omitempty"`
+	CampaignID    uint     `json:"campaign_id,omitempty"`
+	RecipientID   uint     `json:"recipient_id,omitempty"`
 }
 
 // Publisher enqueues WhatsApp jobs so callers (e.g. the daily-report cron)

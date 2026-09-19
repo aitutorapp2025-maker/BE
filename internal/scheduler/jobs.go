@@ -2,6 +2,8 @@ package scheduler
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -377,6 +379,71 @@ func ParentDailyReportJob(
 				queued++
 			}
 			return fmt.Sprintf("queued %d report(s), skipped %d, %d student(s) active", queued, skipped, len(summaries)), nil
+		},
+	}
+}
+
+// WaCampaignDispatchJob sends any WhatsApp campaign whose scheduled time has
+// arrived: it uploads a fresh header media id (from the campaign's stored image,
+// or the template's), marks the campaign "sending", and enqueues every recipient
+// on RabbitMQ (the wa worker then delivers, paced by Redis). Runs every minute.
+func WaCampaignDispatchJob(
+	campaigns *repository.WaCampaignRepository,
+	templates *repository.WaTemplateRepository,
+	waSender *wa.Provider,
+	waPub *wa.Publisher,
+) Job {
+	return Job{
+		Key:      "wa_campaign_dispatch",
+		Schedule: "minutely",
+		Run: func(now time.Time) (string, error) {
+			due, err := campaigns.DueScheduled(now)
+			if err != nil {
+				return "", err
+			}
+			if len(due) == 0 {
+				return "no scheduled campaigns due", nil
+			}
+			dispatched, queued := 0, 0
+			for _, camp := range due {
+				// Resolve the header image bytes (campaign's, else the template's).
+				var img []byte
+				if camp.ImageData != "" {
+					if b, e := base64.StdEncoding.DecodeString(camp.ImageData); e == nil {
+						img = b
+					}
+				}
+				if len(img) == 0 && templates != nil {
+					if tpl, e := templates.GetByNameLang(camp.TemplateName, camp.TemplateLang); e == nil && tpl.ImageData != "" {
+						if b, e2 := base64.StdEncoding.DecodeString(tpl.ImageData); e2 == nil {
+							img = b
+						}
+					}
+				}
+				mediaID := ""
+				if len(img) > 0 && waPub.Enabled() {
+					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					if id, uerr := waSender.UploadMedia(ctx, img, "campaign", "image/jpeg"); uerr == nil {
+						mediaID = id
+					}
+					cancel()
+				}
+				_ = campaigns.StartSending(camp.ID, mediaID)
+				recs, _ := campaigns.AllRecipients(camp.ID)
+				for _, rec := range recs {
+					var params []string
+					_ = json.Unmarshal([]byte(rec.Params), &params)
+					if err := waPub.Enqueue(wa.Job{
+						Kind: "template", Phone: rec.Phone, Template: camp.TemplateName,
+						Lang: camp.TemplateLang, Params: params, HeaderImageID: mediaID,
+						CampaignID: camp.ID, RecipientID: rec.ID,
+					}); err == nil {
+						queued++
+					}
+				}
+				dispatched++
+			}
+			return fmt.Sprintf("dispatched %d campaign(s), queued %d message(s)", dispatched, queued), nil
 		},
 	}
 }

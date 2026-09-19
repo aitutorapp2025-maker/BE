@@ -103,6 +103,8 @@ type settingRequest struct {
 	WhatsappEnabled      bool   `json:"whatsapp_enabled"`
 	WhatsappToken        string `json:"whatsapp_token"`
 	WhatsappPhoneID      string `json:"whatsapp_phone_id"`
+	WhatsappWABAID       string `json:"whatsapp_waba_id"`
+	WhatsappAppID        string `json:"whatsapp_app_id"`
 	WhatsappTemplate     string `json:"whatsapp_template"`
 	WhatsappTemplateLang string `json:"whatsapp_template_lang"`
 	WhatsappOtpEnabled   bool   `json:"whatsapp_otp_enabled"`
@@ -383,6 +385,8 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	// WhatsApp (parents' daily report). Token is write-only.
 	s.WhatsappEnabled = req.WhatsappEnabled
 	s.WhatsappPhoneID = strings.TrimSpace(req.WhatsappPhoneID)
+	s.WhatsappWABAID = strings.TrimSpace(req.WhatsappWABAID)
+	s.WhatsappAppID = strings.TrimSpace(req.WhatsappAppID)
 	s.WhatsappTemplate = strings.TrimSpace(req.WhatsappTemplate)
 	s.WhatsappTemplateLang = strings.TrimSpace(req.WhatsappTemplateLang)
 	s.WhatsappOtpEnabled = req.WhatsappOtpEnabled
