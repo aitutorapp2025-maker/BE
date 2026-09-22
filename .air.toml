@@ -1,0 +1,28 @@
+# Air live-reload config for the Vaha AI Go backend.
+# Run:  air         (from D:\TUTORIAL\BE)
+# It rebuilds ./cmd/api and restarts the server on every .go change.
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Windows: build to a .exe under tmp/
+  cmd = "go build -o ./tmp/api.exe ./cmd/api"
+  bin = "tmp\\api.exe"
+  # File types that trigger a rebuild
+  include_ext = ["go", "tpl", "tmpl", "html"]
+  # Directories Air must ignore (don't watch build output / deps / uploads)
+  exclude_dir = ["tmp", "bin", "vendor", "assets", "uploads", "migrations", ".git"]
+  # Don't rebuild for test files
+  exclude_regex = ["_test\\.go"]
+  # Wait 1s after a change before rebuilding (debounces rapid saves)
+  delay = 1000
+  # Keep the last good binary running if the build fails
+  stop_on_error = true
+  kill_delay = "500ms"
+
+[log]
+  time = true
+
+[misc]
+  # Delete the tmp/ build dir when Air exits
+  clean_on_exit = true

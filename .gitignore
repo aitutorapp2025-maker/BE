@@ -29,3 +29,6 @@ go.work.sum
 
 # Firebase service account (secret)
 service-account.json
+
+# air live-reload build output
+tmp/

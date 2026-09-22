@@ -98,7 +98,7 @@ func (h *HealthHandler) checkRedis(ctx context.Context) string {
 }
 
 func (h *HealthHandler) checkRabbitMQ() string {
-	if h.mq == nil || h.mq.Conn == nil || h.mq.Conn.IsClosed() {
+	if h.mq == nil || !h.mq.Healthy() {
 		return "down"
 	}
 	return "up"
