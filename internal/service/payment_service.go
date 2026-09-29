@@ -431,6 +431,26 @@ func normalizeContact(phone string) string {
 }
 
 // razorpay webhook payload (subset).
+// flexNotes handles Razorpay's `notes`, which is a JSON object when populated
+// but an empty ARRAY ([]) when there are none. A plain map[string]string can't
+// unmarshal `[]`, which previously failed the WHOLE webhook body (so no payment
+// was ever processed). This accepts both and yields an empty map for non-objects.
+type flexNotes map[string]string
+
+func (n *flexNotes) UnmarshalJSON(b []byte) error {
+	s := strings.TrimSpace(string(b))
+	if s == "" || s == "null" || s == "[]" || (len(s) > 0 && s[0] != '{') {
+		*n = flexNotes{}
+		return nil
+	}
+	m := map[string]string{}
+	if err := json.Unmarshal(b, &m); err != nil {
+		return err
+	}
+	*n = m
+	return nil
+}
+
 type webhookPayload struct {
 	Event   string `json:"event"`
 	Payload struct {
@@ -446,7 +466,7 @@ type webhookPayload struct {
 				Amount     int64             `json:"amount"`
 				CustomerID string            `json:"customer_id"`
 				TokenID    string            `json:"token_id"`
-				Notes      map[string]string `json:"notes"`
+				Notes      flexNotes         `json:"notes"`
 			} `json:"entity"`
 		} `json:"payment"`
 	} `json:"payload"`
