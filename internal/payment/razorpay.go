@@ -240,6 +240,33 @@ func (c *Client) post(url string, body any, out any) error {
 }
 
 // get performs an authenticated GET and decodes the JSON response into out.
+// PaymentDetails is the subset of a Razorpay payment entity shown on invoices.
+type PaymentDetails struct {
+	ID        string `json:"id"`
+	Amount    int64  `json:"amount"` // paise
+	Currency  string `json:"currency"`
+	Status    string `json:"status"`
+	Method    string `json:"method"`
+	Email     string `json:"email"`
+	Contact   string `json:"contact"`
+	Vpa       string `json:"vpa"` // UPI id (when method=upi)
+	CreatedAt int64  `json:"created_at"`
+	Acquirer  struct {
+		Rrn              string `json:"rrn"`
+		UpiTransactionID string `json:"upi_transaction_id"`
+	} `json:"acquirer_data"`
+}
+
+// FetchPayment retrieves a single payment by its Razorpay payment id (pay_…),
+// used to enrich the student's invoice with payer + settlement details.
+func (c *Client) FetchPayment(id string) (*PaymentDetails, error) {
+	var out PaymentDetails
+	if err := c.get("https://api.razorpay.com/v1/payments/"+id, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Client) get(url string, out any) error {
 	cfg := c.cfg()
 	if !cfg.Enabled() {

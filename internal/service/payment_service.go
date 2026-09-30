@@ -139,6 +139,20 @@ func (s *PaymentService) ReconcileAutopay(st *model.Student) bool {
 // Enabled reports whether Razorpay is configured.
 func (s *PaymentService) Enabled() bool { return s.cfg().Enabled() }
 
+// FetchInvoiceDetails returns the Razorpay payment details for one of the
+// student's OWN transactions (payer email/phone, UPI VPA, bank RRN) to enrich
+// the invoice. Access-checked via the student's ledger.
+func (s *PaymentService) FetchInvoiceDetails(studentID uint, txn string) (*payment.PaymentDetails, error) {
+	owns, err := s.credits.OwnsTransaction(studentID, txn)
+	if err != nil {
+		return nil, err
+	}
+	if !owns {
+		return nil, fmt.Errorf("transaction not found for this account")
+	}
+	return s.client.FetchPayment(txn)
+}
+
 // CancelAutopay cancels a student's Razorpay AutoPay subscription (so it can't
 // keep charging them) — called when the student deletes their account. Best
 // effort: returns any Razorpay error, but the caller proceeds with deletion.

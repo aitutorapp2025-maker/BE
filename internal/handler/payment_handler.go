@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strings"
+
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/aitutorapp2025-maker/vaha-backend/pkg/logger"
@@ -21,6 +23,38 @@ func NewPaymentHandler(payments *service.PaymentService, log *logger.Logger) *Pa
 
 type subscribeRequest struct {
 	PlanID uint `json:"plan_id"`
+}
+
+// Invoice returns the Razorpay details for one of the student's own payments,
+// so the client can build a richer invoice (payer email/phone, UPI VPA, bank
+// RRN, exact method + settlement time). Access-checked to this student.
+// GET /api/v1/student/payments/:txn/invoice  (Bearer student JWT)
+func (h *PaymentHandler) Invoice(c *fiber.Ctx) error {
+	studentID, _ := c.Locals("student_id").(uint)
+	if studentID == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "not signed in")
+	}
+	txn := strings.TrimSpace(c.Params("txn"))
+	if txn == "" || !strings.HasPrefix(txn, "pay_") {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid transaction id")
+	}
+	d, err := h.payments.FetchInvoiceDetails(studentID, txn)
+	if err != nil {
+		return fiber.NewError(fiber.StatusNotFound, "invoice details unavailable")
+	}
+	return c.JSON(fiber.Map{
+		"success":       true,
+		"id":            d.ID,
+		"amount_rupees": d.Amount / 100,
+		"method":        d.Method,
+		"email":         d.Email,
+		"contact":       d.Contact,
+		"vpa":           d.Vpa,
+		"rrn":           d.Acquirer.Rrn,
+		"upi_txn":       d.Acquirer.UpiTransactionID,
+		"status":        d.Status,
+		"created_at":    d.CreatedAt,
+	})
 }
 
 // Subscribe starts a UPI-AutoPay subscription and returns the checkout link.

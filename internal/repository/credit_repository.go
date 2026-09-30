@@ -104,6 +104,20 @@ type PnL struct {
 }
 
 // Summary returns revenue vs AI cost for the admin profit & loss view.
+// OwnsTransaction reports whether the student has a ledger row referencing txn
+// (the Razorpay payment id stored in the note), so an invoice lookup for that
+// transaction can be access-checked to this student.
+func (r *CreditRepository) OwnsTransaction(studentID uint, txn string) (bool, error) {
+	if txn == "" {
+		return false, nil
+	}
+	var count int64
+	err := r.db.Model(&model.CreditLedger{}).
+		Where("student_id = ? AND note LIKE ?", studentID, "%"+txn+"%").
+		Count(&count).Error
+	return count > 0, err
+}
+
 func (r *CreditRepository) Summary() (*PnL, error) {
 	var p PnL
 	if err := r.db.Model(&model.CreditLedger{}).

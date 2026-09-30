@@ -105,6 +105,11 @@ func (s *CreditService) Balance(studentID uint) (int, error) {
 	return s.repo.Balance(studentID)
 }
 
+// OwnsTransaction reports whether the transaction belongs to the student.
+func (s *CreditService) OwnsTransaction(studentID uint, txn string) (bool, error) {
+	return s.repo.OwnsTransaction(studentID, txn)
+}
+
 // Summary returns the aggregate profit & loss (admin only).
 func (s *CreditService) Summary() (*repository.PnL, error) {
 	return s.repo.Summary()

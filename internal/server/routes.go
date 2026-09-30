@@ -292,6 +292,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// The student's own payment history (Billing screen).
 	studentProtected.Get("/payments",
 		handler.NewStudentPaymentHandler(creditRepo).List)
+	// Razorpay details for one of the student's payments (enriches the invoice).
+	studentProtected.Get("/payments/:txn/invoice",
+		handler.NewPaymentHandler(d.Payments, d.Log).Invoice)
 	// Soft-delete the account (kept for audit, hidden everywhere; re-register
 	// starts fresh).
 	studentProtected.Delete("/account", studentAuthHandler.DeleteAccount)
