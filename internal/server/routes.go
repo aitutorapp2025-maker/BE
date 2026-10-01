@@ -455,6 +455,9 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentPaymentsHandler := handler.NewAdminStudentPaymentsHandler(
 		studentRepo, repository.NewPaymentEventRepository(d.DB))
 	students.Get("/:id/payments", studentPaymentsHandler.Get)
+	// Razorpay enrichment (payer email/phone, UPI VPA, bank RRN) for one of the
+	// student's payments, so the admin panel can download the same rich invoice.
+	students.Get("/:id/payments/:txn/invoice", paymentHandler.AdminInvoice)
 
 	// WhatsApp inbox — chat threads on the brand number (incoming via the Meta
 	// webhook + everything we send), and queue a reply/promotional message.

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
@@ -39,6 +40,39 @@ func (h *PaymentHandler) Invoice(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid transaction id")
 	}
 	d, err := h.payments.FetchInvoiceDetails(studentID, txn)
+	if err != nil {
+		return fiber.NewError(fiber.StatusNotFound, "invoice details unavailable")
+	}
+	return c.JSON(fiber.Map{
+		"success":       true,
+		"id":            d.ID,
+		"amount_rupees": d.Amount / 100,
+		"method":        d.Method,
+		"email":         d.Email,
+		"contact":       d.Contact,
+		"vpa":           d.Vpa,
+		"rrn":           d.Acquirer.Rrn,
+		"upi_txn":       d.Acquirer.UpiTransactionID,
+		"status":        d.Status,
+		"created_at":    d.CreatedAt,
+	})
+}
+
+// AdminInvoice returns the Razorpay details for a given student's payment so the
+// admin panel can build the same enriched invoice as the student app. The
+// student id comes from the path (admin-authorized); FetchInvoiceDetails still
+// verifies the txn belongs to that student.
+// GET /api/v1/admin/students/:id/payments/:txn/invoice  (admin JWT)
+func (h *PaymentHandler) AdminInvoice(c *fiber.Ctx) error {
+	id, err := strconv.ParseUint(strings.TrimSpace(c.Params("id")), 10, 64)
+	if err != nil || id == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid student id")
+	}
+	txn := strings.TrimSpace(c.Params("txn"))
+	if txn == "" || !strings.HasPrefix(txn, "pay_") {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid transaction id")
+	}
+	d, err := h.payments.FetchInvoiceDetails(uint(id), txn)
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "invoice details unavailable")
 	}
