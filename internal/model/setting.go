@@ -16,6 +16,7 @@ type Setting struct {
 	Gstin              string `gorm:"size:20" json:"gstin"`
 	LegalName          string `gorm:"size:160" json:"legal_name"`   // registered business name on the invoice
 	GstAddress         string `gorm:"size:400" json:"gst_address"`  // registered address (one line per \n)
+	Website            string `gorm:"size:200" json:"website"`      // company website printed on the invoice
 	EmailNotifications bool   `gorm:"not null;default:true" json:"email_notifications"`
 	AutoApproveAnswers bool   `gorm:"not null;default:false" json:"auto_approve_answers"`
 	MaintenanceMode    bool   `gorm:"not null;default:false" json:"maintenance_mode"` // legacy (unused)

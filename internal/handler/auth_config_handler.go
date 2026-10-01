@@ -31,6 +31,7 @@ func (h *AuthConfigHandler) Get(c *fiber.Ctx) error {
 	appName := "Vaha AI"
 	logoURL, androidURL, iosURL, supportWhatsApp := "", "", "", ""
 	gstin, legalName, gstAddress := "", "", ""
+	supportEmail, website := "", ""
 	castOn, timedOn, referralOn, crashTestOn := false, false, false, false
 	chatSoundsOn := true // sounds on by default unless an admin turns them off
 	profilePwdOn := false
@@ -46,6 +47,8 @@ func (h *AuthConfigHandler) Get(c *fiber.Ctx) error {
 		gstin = s.Gstin
 		legalName = s.LegalName
 		gstAddress = s.GstAddress
+		supportEmail = s.SupportEmail
+		website = s.Website
 		castOn = s.CastEnabled
 		timedOn = s.TimedTasksEnabled
 		referralOn = s.ReferralEnabled
@@ -64,6 +67,8 @@ func (h *AuthConfigHandler) Get(c *fiber.Ctx) error {
 		"gstin":               gstin,
 		"legal_name":          legalName,
 		"gst_address":         gstAddress,
+		"support_email":       supportEmail,
+		"website":             website,
 		"cast_enabled":        castOn,
 		"timed_tasks_enabled": timedOn,
 		"referral_enabled":    referralOn,

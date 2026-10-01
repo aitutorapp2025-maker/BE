@@ -42,6 +42,7 @@ type settingRequest struct {
 	Gstin              string `json:"gstin"`
 	LegalName          string `json:"legal_name"`
 	GstAddress         string `json:"gst_address"`
+	Website            string `json:"website"`
 	EmailNotifications bool   `json:"email_notifications"`
 	AutoApproveAnswers bool   `json:"auto_approve_answers"`
 	MaintenanceMode    bool   `json:"maintenance_mode"`
@@ -306,6 +307,7 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.Gstin = strings.ToUpper(strings.TrimSpace(req.Gstin))
 	s.LegalName = strings.TrimSpace(req.LegalName)
 	s.GstAddress = strings.TrimSpace(req.GstAddress)
+	s.Website = strings.TrimSpace(req.Website)
 	s.EmailNotifications = req.EmailNotifications
 	s.AutoApproveAnswers = req.AutoApproveAnswers
 	s.MaintenanceMode = req.MaintenanceMode
