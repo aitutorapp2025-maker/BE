@@ -29,7 +29,7 @@ func (h *PlanHandler) syncRazorpayPlan(p *model.Plan) error {
 	if p.IsTrial || p.PriceRupees <= 0 {
 		return nil // free / trial plans have no Razorpay plan
 	}
-	id, err := h.razorpay.CreatePlan(p.Name, p.PriceRupees*100, payment.IntervalMonths(p.DurationDays))
+	id, err := h.razorpay.CreatePlan(p.Name, int(p.PayablePaise()), payment.IntervalMonths(p.DurationDays))
 	if err != nil {
 		return err
 	}
@@ -48,6 +48,8 @@ type planRequest struct {
 	Credits        int      `json:"credits"`
 	IsTrial        bool     `json:"is_trial"`
 	RazorpayPlanID string   `json:"razorpay_plan_id"`
+	GSTMode        string   `json:"gst_mode"` // none | inclusive | exclusive
+	GSTRate        int      `json:"gst_rate"` // percent, e.g. 18
 }
 
 // List returns all plans. GET /api/v1/admin/plans
@@ -93,6 +95,7 @@ func (h *PlanHandler) Create(c *fiber.Ctx) error {
 		DurationDays: req.DurationDays, Tagline: req.Tagline,
 		Features: req.Features, BestValue: req.BestValue, Credits: req.Credits,
 		IsTrial: req.IsTrial, RazorpayPlanID: strings.TrimSpace(req.RazorpayPlanID),
+		GSTMode: req.GSTMode, GSTRate: req.GSTRate,
 	}
 	// Auto-create the Razorpay plan for a paid tier in the active mode (unless
 	// a live id was given manually).
@@ -128,6 +131,7 @@ func (h *PlanHandler) Update(c *fiber.Ctx) error {
 	}
 	testMode := h.razorpay.TestMode()
 	oldPrice, oldDuration := p.PriceRupees, p.DurationDays
+	oldGSTMode, oldGSTRate := p.GSTMode, p.GSTRate
 	oldActive := p.RzpPlanID(testMode)
 	p.Name = req.Name
 	p.PriceRupees = req.PriceRupees
@@ -139,6 +143,8 @@ func (h *PlanHandler) Update(c *fiber.Ctx) error {
 	p.Credits = req.Credits
 	p.IsTrial = req.IsTrial
 	p.RazorpayPlanID = strings.TrimSpace(req.RazorpayPlanID)
+	p.GSTMode = req.GSTMode
+	p.GSTRate = req.GSTRate
 
 	// Razorpay plans are immutable, so (re)create one whenever the price or
 	// billing period changes, or when a paid tier has no id yet in the ACTIVE
@@ -146,7 +152,10 @@ func (h *PlanHandler) Update(c *fiber.Ctx) error {
 	// mode can ever charge the old amount (the other mode's id is recreated
 	// lazily on its next use).
 	var warning string
-	priceChanged := p.PriceRupees != oldPrice || p.DurationDays != oldDuration
+	// A GST change moves the amount actually charged (PayablePaise), so it must
+	// recreate the immutable Razorpay plan exactly like a price change.
+	priceChanged := p.PriceRupees != oldPrice || p.DurationDays != oldDuration ||
+		p.GSTMode != oldGSTMode || p.GSTRate != oldGSTRate
 	if priceChanged {
 		p.RazorpayPlanID = ""
 		p.RazorpayTestPlanID = ""
@@ -204,6 +213,17 @@ func parsePlanBody(c *fiber.Ctx) (*planRequest, error) {
 	}
 	if req.Features == nil {
 		req.Features = []string{}
+	}
+	// Normalize GST: only inclusive/exclusive are tax modes; anything else is
+	// "none". A tax mode defaults to 18% when no valid rate is given.
+	switch req.GSTMode {
+	case "inclusive", "exclusive":
+		if req.GSTRate <= 0 || req.GSTRate > 100 {
+			req.GSTRate = 18
+		}
+	default:
+		req.GSTMode = "none"
+		req.GSTRate = 0
 	}
 	return &req, nil
 }

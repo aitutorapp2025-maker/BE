@@ -39,6 +39,9 @@ type settingRequest struct {
 	SupportEmail       string `json:"support_email"`
 	SupportWhatsApp    string `json:"support_whatsapp"`
 	LogoURL            string `json:"logo_url"`
+	Gstin              string `json:"gstin"`
+	LegalName          string `json:"legal_name"`
+	GstAddress         string `json:"gst_address"`
 	EmailNotifications bool   `json:"email_notifications"`
 	AutoApproveAnswers bool   `json:"auto_approve_answers"`
 	MaintenanceMode    bool   `json:"maintenance_mode"`
@@ -300,6 +303,9 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	s.SupportEmail = strings.TrimSpace(req.SupportEmail)
 	s.SupportWhatsApp = digitsOnly(req.SupportWhatsApp) // wa.me needs bare digits
 	s.LogoURL = strings.TrimSpace(req.LogoURL)
+	s.Gstin = strings.ToUpper(strings.TrimSpace(req.Gstin))
+	s.LegalName = strings.TrimSpace(req.LegalName)
+	s.GstAddress = strings.TrimSpace(req.GstAddress)
 	s.EmailNotifications = req.EmailNotifications
 	s.AutoApproveAnswers = req.AutoApproveAnswers
 	s.MaintenanceMode = req.MaintenanceMode

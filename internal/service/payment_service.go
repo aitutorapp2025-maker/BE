@@ -153,6 +153,27 @@ func (s *PaymentService) FetchInvoiceDetails(studentID uint, txn string) (*payme
 	return s.client.FetchPayment(txn)
 }
 
+// StudentPlanGST reports whether the student's current plan carries GST and at
+// what rate, so the invoice can split the paid total into base + GST. Resolves
+// the plan by name (Student.Plan stores the plan name). Returns (false, 0) when
+// the plan isn't found or has no GST.
+func (s *PaymentService) StudentPlanGST(studentID uint) (applicable bool, rate int) {
+	st, err := s.students.FindByID(studentID)
+	if err != nil {
+		return false, 0
+	}
+	plans, err := s.plans.List()
+	if err != nil {
+		return false, 0
+	}
+	for _, p := range plans {
+		if p.Name == st.Plan {
+			return p.GSTApplicable(), p.GSTRate
+		}
+	}
+	return false, 0
+}
+
 // CancelAutopay cancels a student's Razorpay AutoPay subscription (so it can't
 // keep charging them) — called when the student deletes their account. Best
 // effort: returns any Razorpay error, but the caller proceeds with deletion.
@@ -199,7 +220,7 @@ func (s *PaymentService) CreateSubscription(studentID, planID uint) (*SubscribeR
 	testMode := s.cfg().IsTest()
 	rzpPlanID := strings.TrimSpace(plan.RzpPlanID(testMode))
 	if rzpPlanID == "" {
-		id, err := s.client.CreatePlan(plan.Name, plan.PriceRupees*100, payment.IntervalMonths(plan.DurationDays))
+		id, err := s.client.CreatePlan(plan.Name, int(plan.PayablePaise()), payment.IntervalMonths(plan.DurationDays))
 		if err != nil {
 			return nil, fmt.Errorf("this plan isn't linked to Razorpay yet (auto-create failed: %w)", err)
 		}
@@ -258,7 +279,7 @@ func (s *PaymentService) CreateSubscription(studentID, planID uint) (*SubscribeR
 		// new account does not). Mint a fresh plan under the active keys, save
 		// it, and retry once — same self-heal philosophy as a price change.
 		id, cerr := s.client.CreatePlan(
-			plan.Name, plan.PriceRupees*100, payment.IntervalMonths(plan.DurationDays))
+			plan.Name, int(plan.PayablePaise()), payment.IntervalMonths(plan.DurationDays))
 		if cerr != nil {
 			return nil, fmt.Errorf("razorpay plan re-link failed: %w (original: %v)", cerr, err)
 		}
@@ -351,7 +372,7 @@ func (s *PaymentService) CreateMandateIntent(studentID, planID uint) (*MandateIn
 		"purpose":    "mandate",
 	}
 	// max_amount caps each future auto-debit; the mandate is valid for 10 years.
-	maxAmountPaise := plan.PriceRupees * 100
+	maxAmountPaise := int(plan.PayablePaise())
 	expireAt := time.Now().AddDate(10, 0, 0).Unix()
 	receipt := "mandate_" + strconv.FormatUint(uint64(st.ID), 10)
 	orderID, err := s.client.CreateMandateOrder(mandateAuthPaise, maxAmountPaise, st.RazorpayCustomerID, expireAt, receipt, notes)
@@ -401,19 +422,25 @@ func (s *PaymentService) ChargeDueMandates(now time.Time) (int, error) {
 		// Apply any accrued referral reward as a discount on this bill. Razorpay
 		// needs a positive amount, so we never discount below ₹1; whatever we use
 		// is cleared once the charge is initiated so it isn't applied twice.
-		amountRupees := plan.PriceRupees
+		// Charge the GST-inclusive payable (price + GST for an exclusive plan),
+		// then subtract any referral reward. The discount is figured on the base
+		// price and applied in paise so GST isn't lost to rounding.
+		payablePaise := plan.PayablePaise()
 		discount := st.ReferralRewardRupees
 		if discount > 0 {
-			if discount > amountRupees-1 {
-				discount = amountRupees - 1
+			if discount > plan.PriceRupees-1 {
+				discount = plan.PriceRupees - 1
 			}
 			if discount < 0 {
 				discount = 0
 			}
-			amountRupees -= discount
+			payablePaise -= int64(discount) * 100
+		}
+		if payablePaise < 100 {
+			payablePaise = 100 // Razorpay needs a positive amount (≥ ₹1)
 		}
 		receipt := "cycle_" + strconv.FormatUint(uint64(st.ID), 10) + "_" + strconv.FormatInt(now.Unix(), 10)
-		if _, err := s.client.ChargeRecurring(amountRupees*100, st.RazorpayCustomerID, st.RazorpayTokenID, receipt, notes); err != nil {
+		if _, err := s.client.ChargeRecurring(int(payablePaise), st.RazorpayCustomerID, st.RazorpayTokenID, receipt, notes); err != nil {
 			continue // leave NextChargeAt so it retries next tick
 		}
 		// Advance the next charge by the plan's cycle length so we don't re-debit

@@ -17,6 +17,14 @@ type Plan struct {
 	// Admin controls the trial length (DurationDays) and credits (Credits) by
 	// editing this plan. There should be exactly one trial plan.
 	IsTrial bool `gorm:"not null;default:false" json:"is_trial"`
+	// GSTMode controls how GST is applied to PriceRupees:
+	//   "none"      — no GST (PriceRupees is the final amount, no tax shown).
+	//   "inclusive" — PriceRupees already contains GST; the invoice splits it
+	//                 into base + GST. Amount charged = PriceRupees.
+	//   "exclusive" — GST is added on top; amount charged = PriceRupees + GST.
+	GSTMode string `gorm:"size:12;not null;default:'none'" json:"gst_mode"`
+	// GSTRate is the GST percentage applied when GSTMode != "none" (e.g. 18).
+	GSTRate int `gorm:"not null;default:18" json:"gst_rate"`
 	// RazorpayPlanID links this tier to a LIVE-mode Razorpay plan (plan_...)
 	// for UPI AutoPay subscriptions; RazorpayTestPlanID is its test-mode twin
 	// (auto-created — Razorpay plan ids are mode-scoped, so each mode needs its
@@ -48,4 +56,32 @@ func (p *Plan) SetRzpPlanID(test bool, id string) {
 	} else {
 		p.RazorpayPlanID = id
 	}
+}
+
+// GSTApplicable reports whether this plan carries GST (inclusive or exclusive).
+func (p *Plan) GSTApplicable() bool {
+	return p.GSTMode == "inclusive" || p.GSTMode == "exclusive"
+}
+
+// PayablePaise is the amount actually charged to the customer, in paise. For an
+// exclusive-GST plan this is price + GST; otherwise it is the plain price (an
+// inclusive plan already has the tax baked into PriceRupees).
+func (p *Plan) PayablePaise() int64 {
+	base := int64(p.PriceRupees) * 100
+	if p.GSTMode == "exclusive" {
+		return base + base*int64(p.GSTRate)/100
+	}
+	return base
+}
+
+// InvoiceSplitPaise breaks a charged total (in paise) into its taxable base and
+// GST components for the invoice. For a non-GST plan the whole amount is the
+// base and GST is zero. Both inclusive and exclusive split the final total the
+// same way: base = total / (1 + rate), GST = total − base.
+func (p *Plan) InvoiceSplitPaise(totalPaise int64) (basePaise, gstPaise int64) {
+	if !p.GSTApplicable() || p.GSTRate <= 0 {
+		return totalPaise, 0
+	}
+	basePaise = totalPaise * 100 / (100 + int64(p.GSTRate))
+	return basePaise, totalPaise - basePaise
 }

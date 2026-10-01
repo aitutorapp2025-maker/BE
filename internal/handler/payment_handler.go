@@ -43,18 +43,21 @@ func (h *PaymentHandler) Invoice(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "invoice details unavailable")
 	}
+	gstApplicable, gstRate := h.payments.StudentPlanGST(studentID)
 	return c.JSON(fiber.Map{
-		"success":       true,
-		"id":            d.ID,
-		"amount_rupees": d.Amount / 100,
-		"method":        d.Method,
-		"email":         d.Email,
-		"contact":       d.Contact,
-		"vpa":           d.Vpa,
-		"rrn":           d.Acquirer.Rrn,
-		"upi_txn":       d.Acquirer.UpiTransactionID,
-		"status":        d.Status,
-		"created_at":    d.CreatedAt,
+		"success":        true,
+		"id":             d.ID,
+		"amount_rupees":  d.Amount / 100,
+		"method":         d.Method,
+		"email":          d.Email,
+		"contact":        d.Contact,
+		"vpa":            d.Vpa,
+		"rrn":            d.Acquirer.Rrn,
+		"upi_txn":        d.Acquirer.UpiTransactionID,
+		"status":         d.Status,
+		"created_at":     d.CreatedAt,
+		"gst_applicable": gstApplicable,
+		"gst_rate":       gstRate,
 	})
 }
 
@@ -76,18 +79,21 @@ func (h *PaymentHandler) AdminInvoice(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "invoice details unavailable")
 	}
+	gstApplicable, gstRate := h.payments.StudentPlanGST(uint(id))
 	return c.JSON(fiber.Map{
-		"success":       true,
-		"id":            d.ID,
-		"amount_rupees": d.Amount / 100,
-		"method":        d.Method,
-		"email":         d.Email,
-		"contact":       d.Contact,
-		"vpa":           d.Vpa,
-		"rrn":           d.Acquirer.Rrn,
-		"upi_txn":       d.Acquirer.UpiTransactionID,
-		"status":        d.Status,
-		"created_at":    d.CreatedAt,
+		"success":        true,
+		"id":             d.ID,
+		"amount_rupees":  d.Amount / 100,
+		"method":         d.Method,
+		"email":          d.Email,
+		"contact":        d.Contact,
+		"vpa":            d.Vpa,
+		"rrn":            d.Acquirer.Rrn,
+		"upi_txn":        d.Acquirer.UpiTransactionID,
+		"status":         d.Status,
+		"created_at":     d.CreatedAt,
+		"gst_applicable": gstApplicable,
+		"gst_rate":       gstRate,
 	})
 }
 

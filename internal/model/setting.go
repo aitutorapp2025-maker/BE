@@ -11,6 +11,11 @@ type Setting struct {
 	// (wa.me). Digits with country code, no "+" needed (e.g. 919876543210).
 	SupportWhatsApp string `gorm:"size:24" json:"support_whatsapp"`
 	LogoURL            string `gorm:"size:400" json:"logo_url"` // organisation logo (uploaded asset URL)
+	// Company tax identity for GST invoices. When Gstin is set, a plan's GST
+	// breakdown (base + GST) and the GSTIN print on the downloaded invoice.
+	Gstin              string `gorm:"size:20" json:"gstin"`
+	LegalName          string `gorm:"size:160" json:"legal_name"`   // registered business name on the invoice
+	GstAddress         string `gorm:"size:400" json:"gst_address"`  // registered address (one line per \n)
 	EmailNotifications bool   `gorm:"not null;default:true" json:"email_notifications"`
 	AutoApproveAnswers bool   `gorm:"not null;default:false" json:"auto_approve_answers"`
 	MaintenanceMode    bool   `gorm:"not null;default:false" json:"maintenance_mode"` // legacy (unused)
