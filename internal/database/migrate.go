@@ -57,6 +57,8 @@ func Migrate(db *gorm.DB) error {
 		&model.CrashDaily{},
 		&model.SupportTicket{},
 		&model.HomeBanner{},
+		&model.CreditPack{},
+		&model.CreditTopup{},
 	)
 }
 
@@ -390,6 +392,27 @@ func SeedBooks(db *gorm.DB) (int, error) {
 		return 0, err
 	}
 	return len(books), nil
+}
+
+// SeedCreditPacks inserts the default one-time credit top-up packs (₹25, ₹50)
+// if none exist. Credits are sized at the Standard-plan rate (104 ÷ 699 ≈ 0.149
+// credits/₹): ₹25 → 4, ₹50 → 7. Admins can edit/add packs afterwards.
+func SeedCreditPacks(db *gorm.DB) (int, error) {
+	var count int64
+	if err := db.Model(&model.CreditPack{}).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	if count > 0 {
+		return 0, nil
+	}
+	packs := []model.CreditPack{
+		{AmountRupees: 25, Credits: 4, Active: true, Sort: 1},
+		{AmountRupees: 50, Credits: 7, Active: true, Sort: 2},
+	}
+	if err := db.Create(&packs).Error; err != nil {
+		return 0, err
+	}
+	return len(packs), nil
 }
 
 // SeedPlans inserts the default subscription plans if the table is empty.

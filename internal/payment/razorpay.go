@@ -57,6 +57,13 @@ func NewClient(cfg ConfigFunc) *Client {
 	return &Client{cfg: cfg, http: &http.Client{Timeout: 30 * time.Second}}
 }
 
+// Enabled reports whether Razorpay credentials are configured.
+func (c *Client) Enabled() bool { return c.cfg().Enabled() }
+
+// KeyID returns the public Razorpay key id (safe to send to the client to open
+// checkout).
+func (c *Client) KeyID() string { return c.cfg().KeyID }
+
 // TestMode reports whether the client is currently using test-mode keys.
 func (c *Client) TestMode() bool { return c.cfg().IsTest() }
 
@@ -397,6 +404,43 @@ func (c *Client) CreateMandateOrder(amountPaise, maxAmountPaise int, customerID 
 		return "", fmt.Errorf("razorpay: empty order id")
 	}
 	return out.ID, nil
+}
+
+// CreateOrder creates a one-time Razorpay order (for credit top-ups — NOT an
+// AutoPay mandate) and returns its id. notes tag the order for our records.
+func (c *Client) CreateOrder(amountPaise int, receipt string, notes map[string]string) (string, error) {
+	body := map[string]any{
+		"amount":   amountPaise,
+		"currency": "INR",
+		"receipt":  receipt,
+	}
+	if len(notes) > 0 {
+		body["notes"] = notes
+	}
+	var out struct {
+		ID string `json:"id"`
+	}
+	if err := c.post(ordersURL, body, &out); err != nil {
+		return "", err
+	}
+	if out.ID == "" {
+		return "", fmt.Errorf("razorpay: empty order id")
+	}
+	return out.ID, nil
+}
+
+// VerifyPaymentSignature checks the signature Razorpay Checkout returns to the
+// client after a successful one-time payment: HMAC-SHA256("orderID|paymentID")
+// with the key secret must equal the signature. Guards against a forged success.
+func (c *Client) VerifyPaymentSignature(orderID, paymentID, signature string) bool {
+	secret := c.cfg().KeySecret
+	if secret == "" || orderID == "" || paymentID == "" || signature == "" {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(orderID + "|" + paymentID))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(signature))
 }
 
 // UpiIntent is the create/upi intent response we use.

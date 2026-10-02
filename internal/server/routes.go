@@ -119,6 +119,11 @@ func registerRoutes(app *fiber.App, d Deps) {
 	razorpayClient := payment.NewClient(razorpayProvider)
 	// The plan handler auto-creates a Razorpay plan on create/price-change.
 	planHandler := handler.NewPlanHandler(planRepo, razorpayClient)
+	// One-time credit top-ups (student) + credit-pack CRUD (admin).
+	creditPackRepo := repository.NewCreditPackRepository(d.DB)
+	creditTopupRepo := repository.NewCreditTopupRepository(d.DB)
+	topupHandler := handler.NewTopupHandler(
+		razorpayClient, creditService, studentRepo, planRepo, creditPackRepo, creditTopupRepo)
 	settingHandler := handler.NewSettingHandler(settingRepo, emailPublisher, smsPublisher, tutorService.Probe, waSender, repository.NewWaMessageRepository(d.DB))
 
 	landingHandler := handler.NewLandingHandler(
@@ -343,6 +348,10 @@ func registerRoutes(app *fiber.App, d Deps) {
 	studentProtected.Post("/subscribe", paymentHandler.Subscribe)
 	// Headless UPI-AutoPay: returns a GPay intent deeplink (no Razorpay UI).
 	studentProtected.Post("/mandate-intent", paymentHandler.MandateIntent)
+	// One-time credit top-ups (shown when the student runs out of credits).
+	studentProtected.Get("/credit-packs", topupHandler.Packs)
+	studentProtected.Post("/credits/topup", topupHandler.CreateTopup)
+	studentProtected.Post("/credits/topup/verify", topupHandler.VerifyTopup)
 
 	// Public client-side error reporting (emails an alert to the admin).
 	errorReportHandler := handler.NewErrorReportHandler(d.Alerter)
@@ -521,6 +530,13 @@ func registerRoutes(app *fiber.App, d Deps) {
 	plans.Get("/:id", planHandler.Get)
 	plans.Put("/:id", planHandler.Update)
 	plans.Delete("/:id", planHandler.Delete)
+
+	// Credit-pack CRUD (the one-time top-up options students see at 0 credits).
+	creditPacks := adminProtected.Group("/credit-packs")
+	creditPacks.Get("", topupHandler.AdminListPacks)
+	creditPacks.Post("", topupHandler.AdminCreatePack)
+	creditPacks.Put("/:id", topupHandler.AdminUpdatePack)
+	creditPacks.Delete("/:id", topupHandler.AdminDeletePack)
 
 	// Home-screen banners CRUD (+ image upload).
 	adminBanners := adminProtected.Group("/banners")
