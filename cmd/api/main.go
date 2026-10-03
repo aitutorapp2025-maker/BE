@@ -250,7 +250,8 @@ func main() {
 
 	// Push worker: delivers admin broadcasts queued on RabbitMQ (resolves tokens,
 	// sends via FCM, prunes stale ones).
-	if err := worker.StartPushWorker(mq, pushSender, deviceRepo, repository.NewNotificationRepository(db), log); err != nil {
+	notifRepo := repository.NewNotificationRepository(db)
+	if err := worker.StartPushWorker(mq, pushSender, deviceRepo, notifRepo, log); err != nil {
 		log.Errorf("push worker: %v", err)
 	}
 
@@ -274,6 +275,14 @@ func main() {
 	// Publisher for scheduler-driven broadcasts (reuses the admin push pipeline:
 	// queued on RabbitMQ, delivered + pruned by the push worker).
 	pushPublisher := fcm.NewPublisher(mq, func() bool { return pushSender.Enabled() })
+
+	// Transactional notifications (push + in-app feed) for payment success/failure.
+	// The credit top-up / recharge "credits added" alert is wired on the HTTP
+	// credit service in routes.go.
+	paymentService.SetNotify(func(studentID uint, title, body, typ string) {
+		_ = pushPublisher.Enqueue(fcm.PushJob{
+			Title: title, Body: body, StudentIDs: []uint{studentID}, Type: typ})
+	})
 
 	// WhatsApp (Meta Business Cloud API) for the parents' daily study report.
 	// Config comes live from admin Settings, so pasting the token applies
@@ -328,9 +337,15 @@ func main() {
 		{scheduler.CleanupAuditLogsJob(db),
 			"Cleanup audit logs",
 			"Drops audit-log partitions older than the 90-day retention window."},
-		{scheduler.ReferralPromoJob(settingRepo, pushPublisher),
+		{scheduler.ReferralPromoJob(settingRepo, notifRepo, pushPublisher),
 			"Referral promo push",
-			"Every 3 days, sends all customers an FCM push promoting refer & earn (only when the referral program is on)."},
+			"Every 2 weeks, sends all customers an FCM push promoting refer & earn (rotated copy, de-duped, only when the referral program is on)."},
+		{scheduler.LowCreditsJob(studentRepo, notifRepo, pushPublisher),
+			"Out-of-credits nudge",
+			"Once a day, nudges paid students whose balance is 0 to buy a credit top-up (at most once every 3 days)."},
+		{scheduler.RenewalReminderJob(studentRepo, notifRepo, pushPublisher),
+			"Plan renewal reminder",
+			"Once a day, reminds paid students whose plan renews within the next 3 days."},
 		{scheduler.SyncFirebaseStatsJob(firebaseStats),
 			"Sync Firebase analytics + crashlytics",
 			"Once a day, pulls the Firebase Analytics + Crashlytics BigQuery export into our dashboards (only when enabled + configured)."},

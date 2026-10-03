@@ -154,6 +154,11 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Background push publisher (RabbitMQ) — shared by the support handler (notify
 	// the student on an admin response) and the admin notification broadcast.
 	pushPublisher := fcm.NewPublisher(d.MQ, func() bool { return d.Push.Enabled() })
+	// Confirm credit top-ups / recharges with a push + in-app notification.
+	creditService.SetNotify(func(studentID uint, title, body, typ string) {
+		_ = pushPublisher.Enqueue(fcm.PushJob{
+			Title: title, Body: body, StudentIDs: []uint{studentID}, Type: typ})
+	})
 	// "Report a problem" support tickets (student files/tracks; admin responds).
 	supportRepo := repository.NewSupportRepository(d.DB)
 	supportHandler := handler.NewSupportHandler(

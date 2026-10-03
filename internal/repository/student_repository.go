@@ -134,6 +134,27 @@ func (r *StudentRepository) TrialsEndingWithin(now time.Time, days int) ([]model
 	return out, err
 }
 
+// PaidLowCredits returns paid students whose credit balance is at or below a
+// threshold (e.g. 0) — candidates for an "out of credits / top up" nudge.
+func (r *StudentRepository) PaidLowCredits(threshold int) ([]model.Student, error) {
+	var out []model.Student
+	err := r.db.Where("pay_status = ?", "paid").
+		Where("credits <= ?", threshold).
+		Find(&out).Error
+	return out, err
+}
+
+// RenewingWithin returns paid students on AutoPay whose next charge falls within
+// the next `days` — candidates for a renewal reminder.
+func (r *StudentRepository) RenewingWithin(now time.Time, days int) ([]model.Student, error) {
+	end := now.AddDate(0, 0, days)
+	var out []model.Student
+	err := r.db.Where("pay_status = ?", "paid").
+		Where("next_charge_at IS NOT NULL AND next_charge_at >= ? AND next_charge_at <= ?", now, end).
+		Find(&out).Error
+	return out, err
+}
+
 // FindBySubscriptionID returns the student with the given Razorpay subscription
 // id (used by the payment webhook to match a charge back to a student).
 func (r *StudentRepository) FindBySubscriptionID(subID string) (*model.Student, error) {

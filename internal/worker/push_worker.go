@@ -28,17 +28,21 @@ func StartPushWorker(mq *queue.RabbitMQ, push fcm.Pusher, devices *repository.De
 		// Persist to the feed first (a broadcast → one row with student_id 0; a
 		// targeted send → one row per student) so it's recorded even if delivery
 		// fails or no devices are registered. Best-effort.
+		notifType := job.Type
+		if notifType == "" {
+			notifType = "announcement"
+		}
 		if notifs != nil {
 			var rows []model.Notification
 			if len(job.StudentIDs) == 0 {
 				rows = append(rows, model.Notification{
 					StudentID: 0, Title: job.Title, Body: job.Body,
-					Image: job.Image, Type: "announcement"})
+					Image: job.Image, Type: notifType})
 			} else {
 				for _, id := range job.StudentIDs {
 					rows = append(rows, model.Notification{
 						StudentID: id, Title: job.Title, Body: job.Body,
-						Image: job.Image, Type: "announcement"})
+						Image: job.Image, Type: notifType})
 				}
 			}
 			if err := notifs.CreateBatch(rows); err != nil {
@@ -71,7 +75,7 @@ func StartPushWorker(mq *queue.RabbitMQ, push fcm.Pusher, devices *repository.De
 
 		sent, invalid, sendErr := push.SendToTokens(context.Background(), tokens,
 			job.Title, job.Body, job.Image,
-			map[string]string{"type": "admin_broadcast"})
+			map[string]string{"type": notifType})
 		if len(invalid) > 0 {
 			_ = devices.DeleteTokens(invalid)
 		}

@@ -84,7 +84,13 @@ type PaymentService struct {
 	// is called from /student/me while a mandate looks pending).
 	reconcileMu sync.Mutex
 	reconcileAt map[uint]time.Time
+
+	// notify sends payment success/failure notifications (optional; SetNotify).
+	notify NotifyFunc
 }
+
+// SetNotify wires the notification sender for payment success/failure alerts.
+func (s *PaymentService) SetNotify(fn NotifyFunc) { s.notify = fn }
 
 // NewPaymentService builds a PaymentService.
 func NewPaymentService(
@@ -565,6 +571,12 @@ func (s *PaymentService) HandleWebhook(body []byte, signature string) (bool, err
 		st.PayStatus = "paid"
 		st.AutopayActive = true
 		_ = s.students.Update(st)
+		if s.notify != nil {
+			s.notify(st.ID, "Payment successful ✅",
+				fmt.Sprintf("Your %s plan is active — %d credits added for this cycle.",
+					plan.Name, plan.Credits),
+				"payment_success")
+		}
 		return true, nil
 
 	case "subscription.authenticated", "subscription.activated":
@@ -591,6 +603,12 @@ func (s *PaymentService) HandleWebhook(body []byte, signature string) (bool, err
 		if st, err := s.students.FindBySubscriptionID(subID); err == nil {
 			_, _ = s.credits.Grant(int(st.ID), 0, 0, "autopay_failed",
 				"AutoPay charge failed")
+			if s.notify != nil {
+				s.notify(st.ID, "Payment failed ⚠️",
+					"We couldn't renew your plan. Please check your UPI AutoPay or "+
+						"update your payment method to keep your access.",
+					"payment_failed")
+			}
 		}
 		return true, nil
 

@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"gorm.io/gorm"
 )
@@ -21,6 +23,17 @@ func (r *NotificationRepository) CreateBatch(notifs []model.Notification) error 
 		return nil
 	}
 	return r.db.CreateInBatches(notifs, 100).Error
+}
+
+// CountRecentByType counts notifications of a given type sent to a student (or
+// broadcasts when studentID is 0) since a cutoff — used to de-duplicate repeated
+// nudges (e.g. don't re-send "out of credits" every day).
+func (r *NotificationRepository) CountRecentByType(studentID uint, typ string, since time.Time) (int64, error) {
+	var n int64
+	err := r.db.Model(&model.Notification{}).
+		Where("student_id = ? AND type = ? AND created_at >= ?", studentID, typ, since).
+		Count(&n).Error
+	return n, err
 }
 
 // FeedForStudent returns the notifications visible to a student — broadcasts

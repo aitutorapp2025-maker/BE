@@ -17,6 +17,10 @@ type PushJob struct {
 	Body       string `json:"body"`
 	Image      string `json:"image,omitempty"`
 	StudentIDs []uint `json:"student_ids,omitempty"` // empty = all customers
+	// Type tags the notification (announcement | credit_low | credit_added |
+	// payment_success | payment_failed | renewal_reminder | referral_promo …).
+	// Stored on the feed row and sent in the FCM data so the app can deep-link.
+	Type string `json:"type,omitempty"`
 }
 
 // Publisher enqueues push jobs onto RabbitMQ so the admin HTTP request returns

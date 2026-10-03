@@ -1,6 +1,8 @@
 package service
 
 import (
+	"fmt"
+
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 )
@@ -62,16 +64,24 @@ func SuggestedCredits(priceRupees int, marginPct int) int {
 	return priceRupees * (100 - marginPct) / 100
 }
 
+// NotifyFunc sends a push + in-app notification to one student. Optional —
+// services call it only when wired (SetNotify).
+type NotifyFunc func(studentID uint, title, body, typ string)
+
 // CreditService enforces the credit balance around AI actions and records the
 // ledger for the admin profit & loss.
 type CreditService struct {
-	repo *repository.CreditRepository
+	repo   *repository.CreditRepository
+	notify NotifyFunc
 }
 
 // NewCreditService builds a CreditService.
 func NewCreditService(repo *repository.CreditRepository) *CreditService {
 	return &CreditService{repo: repo}
 }
+
+// SetNotify wires the notification sender (used to confirm credit top-ups).
+func (s *CreditService) SetNotify(fn NotifyFunc) { s.notify = fn }
 
 // CanAfford reports whether the student has enough credits for the action.
 func (s *CreditService) CanAfford(studentID uint, action string) (bool, int, error) {
@@ -89,9 +99,17 @@ func (s *CreditService) Charge(studentID uint, action string) (newBalance int, e
 	return s.repo.Debit(studentID, c.Credits, action, c.AICostPaise, c.Label)
 }
 
-// Grant adds credits from a plan or recharge, recording the revenue.
+// Grant adds credits from a plan or recharge, recording the revenue. A manual
+// top-up / recharge (kind "recharge") also notifies the student that credits
+// were added; plan grants ("subscription") are announced by the payment flow.
 func (s *CreditService) Grant(studentID, credits int, revenuePaise int64, kind, note string) (int, error) {
-	return s.repo.Grant(uint(studentID), credits, revenuePaise, kind, note)
+	bal, err := s.repo.Grant(uint(studentID), credits, revenuePaise, kind, note)
+	if err == nil && kind == "recharge" && credits > 0 && s.notify != nil {
+		s.notify(uint(studentID), "Credits added ⚡",
+			fmt.Sprintf("%d credits added — your balance is now %d.", credits, bal),
+			"credit_added")
+	}
+	return bal, err
 }
 
 // ExpireCredits zeroes a student's balance (unused credits don't carry over at
