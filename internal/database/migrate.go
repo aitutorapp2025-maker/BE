@@ -59,6 +59,7 @@ func Migrate(db *gorm.DB) error {
 		&model.HomeBanner{},
 		&model.CreditPack{},
 		&model.CreditTopup{},
+		&model.NotificationTemplate{},
 	)
 }
 
@@ -392,6 +393,34 @@ func SeedBooks(db *gorm.DB) (int, error) {
 		return 0, err
 	}
 	return len(books), nil
+}
+
+// SeedNotificationTemplates inserts the default editable wording for each
+// automated notification type, for any type not already present. Idempotent —
+// new types are backfilled on later deploys without touching edited rows.
+func SeedNotificationTemplates(db *gorm.DB) (int, error) {
+	var existing []model.NotificationTemplate
+	if err := db.Find(&existing).Error; err != nil {
+		return 0, err
+	}
+	have := make(map[string]bool, len(existing))
+	for _, t := range existing {
+		have[t.Type] = true
+	}
+	var toAdd []model.NotificationTemplate
+	for _, d := range model.DefaultNotificationTemplates() {
+		if !have[d.Type] {
+			toAdd = append(toAdd, model.NotificationTemplate{
+				Type: d.Type, Title: d.Title, Body: d.Body, Active: true})
+		}
+	}
+	if len(toAdd) == 0 {
+		return 0, nil
+	}
+	if err := db.Create(&toAdd).Error; err != nil {
+		return 0, err
+	}
+	return len(toAdd), nil
 }
 
 // SeedCreditPacks inserts the default one-time credit top-up packs (₹25, ₹50)

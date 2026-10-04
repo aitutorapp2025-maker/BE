@@ -85,12 +85,12 @@ type PaymentService struct {
 	reconcileMu sync.Mutex
 	reconcileAt map[uint]time.Time
 
-	// notify sends payment success/failure notifications (optional; SetNotify).
-	notify NotifyFunc
+	// notifs sends payment success/failure notifications (optional; SetNotifier).
+	notifs *NotificationService
 }
 
-// SetNotify wires the notification sender for payment success/failure alerts.
-func (s *PaymentService) SetNotify(fn NotifyFunc) { s.notify = fn }
+// SetNotifier wires the notification sender for payment success/failure alerts.
+func (s *PaymentService) SetNotifier(n *NotificationService) { s.notifs = n }
 
 // NewPaymentService builds a PaymentService.
 func NewPaymentService(
@@ -571,11 +571,11 @@ func (s *PaymentService) HandleWebhook(body []byte, signature string) (bool, err
 		st.PayStatus = "paid"
 		st.AutopayActive = true
 		_ = s.students.Update(st)
-		if s.notify != nil {
-			s.notify(st.ID, "Payment successful ✅",
-				fmt.Sprintf("Your %s plan is active — %d credits added for this cycle.",
-					plan.Name, plan.Credits),
-				"payment_success")
+		if s.notifs != nil {
+			dt, db := model.DefaultNotifTemplate("payment_success")
+			s.notifs.Send([]uint{st.ID}, "payment_success",
+				map[string]string{"plan": plan.Name, "credits": strconv.Itoa(plan.Credits)},
+				dt, db)
 		}
 		return true, nil
 
@@ -603,11 +603,9 @@ func (s *PaymentService) HandleWebhook(body []byte, signature string) (bool, err
 		if st, err := s.students.FindBySubscriptionID(subID); err == nil {
 			_, _ = s.credits.Grant(int(st.ID), 0, 0, "autopay_failed",
 				"AutoPay charge failed")
-			if s.notify != nil {
-				s.notify(st.ID, "Payment failed ⚠️",
-					"We couldn't renew your plan. Please check your UPI AutoPay or "+
-						"update your payment method to keep your access.",
-					"payment_failed")
+			if s.notifs != nil {
+				dt, db := model.DefaultNotifTemplate("payment_failed")
+				s.notifs.Send([]uint{st.ID}, "payment_failed", nil, dt, db)
 			}
 		}
 		return true, nil

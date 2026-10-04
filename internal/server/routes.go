@@ -154,11 +154,15 @@ func registerRoutes(app *fiber.App, d Deps) {
 	// Background push publisher (RabbitMQ) — shared by the support handler (notify
 	// the student on an admin response) and the admin notification broadcast.
 	pushPublisher := fcm.NewPublisher(d.MQ, func() bool { return d.Push.Enabled() })
-	// Confirm credit top-ups / recharges with a push + in-app notification.
-	creditService.SetNotify(func(studentID uint, title, body, typ string) {
-		_ = pushPublisher.Enqueue(fcm.PushJob{
-			Title: title, Body: body, StudentIDs: []uint{studentID}, Type: typ})
-	})
+	notifTemplateRepo := repository.NewNotificationTemplateRepository(d.DB)
+	// Confirm credit top-ups / recharges with a push + in-app notification,
+	// rendered from the admin-editable template.
+	creditService.SetNotifier(service.NewNotificationService(
+		notifTemplateRepo,
+		func(studentIDs []uint, title, body, typ string) {
+			_ = pushPublisher.Enqueue(fcm.PushJob{
+				Title: title, Body: body, StudentIDs: studentIDs, Type: typ})
+		}))
 	// "Report a problem" support tickets (student files/tracks; admin responds).
 	supportRepo := repository.NewSupportRepository(d.DB)
 	supportHandler := handler.NewSupportHandler(
@@ -447,6 +451,10 @@ func registerRoutes(app *fiber.App, d Deps) {
 	adminProtected.Get("/audit-logs/:id", auditLogHandler.Get)
 	adminProtected.Post("/notifications/send", notificationHandler.Send)
 	adminProtected.Post("/notifications/image", uploadHandler.UploadNotificationImage)
+	// Editable wording for the automated notifications.
+	notifTemplateHandler := handler.NewNotificationTemplateHandler(notifTemplateRepo)
+	adminProtected.Get("/notification-templates", notifTemplateHandler.List)
+	adminProtected.Put("/notification-templates/:type", notifTemplateHandler.Update)
 
 	// Reports (CSV exports, Excel-openable).
 	reports := adminProtected.Group("/reports")

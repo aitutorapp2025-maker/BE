@@ -5,10 +5,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/database"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/fcm"
+	"github.com/aitutorapp2025-maker/vaha-backend/internal/model"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/repository"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/service"
 	"github.com/aitutorapp2025-maker/vaha-backend/internal/wa"
@@ -135,13 +137,7 @@ func TrialRemindersJob(
 // admin broadcast pipeline (queued on RabbitMQ; the push worker resolves every
 // customer's device tokens, delivers and prunes stale ones). It only sends when
 // the referral program is switched on, so a disabled program is never promoted.
-func ReferralPromoJob(settings *repository.SettingRepository, notifs *repository.NotificationRepository, push *fcm.Publisher) Job {
-	// Rotated copy so the feed isn't a wall of identical messages.
-	variants := []struct{ title, body string }{
-		{"Invite friends, earn rewards 🎁", "Share Vaha AI with your friends and earn rewards when they join. Tap to open the app and get your link!"},
-		{"Know someone in school? 📚", "Invite a friend to Vaha AI — you both benefit when they join. Open the app to grab your referral link."},
-		{"Share the smart way to study ✨", "Your friends can learn with Vaha AI too. Send your referral link and earn rewards when they sign up."},
-	}
+func ReferralPromoJob(settings *repository.SettingRepository, notifRepo *repository.NotificationRepository, notifs *service.NotificationService) Job {
 	return Job{
 		Key:      "referral_promo",
 		Schedule: "every14days",
@@ -153,25 +149,22 @@ func ReferralPromoJob(settings *repository.SettingRepository, notifs *repository
 			if !s.ReferralEnabled {
 				return "referral program off — skipped", nil
 			}
-			if !push.Enabled() {
-				return "FCM not configured (0 sent)", nil
-			}
 			// De-dupe: don't post another promo if one went out in the last 10 days
 			// (guards against a manual run / schedule change flooding the feed).
-			if notifs != nil {
-				if n, _ := notifs.CountRecentByType(0, "referral_promo", now.AddDate(0, 0, -10)); n > 0 {
+			if notifRepo != nil {
+				if n, _ := notifRepo.CountRecentByType(0, "referral_promo", now.AddDate(0, 0, -10)); n > 0 {
 					return "recent referral promo exists — skipped", nil
 				}
 			}
-			v := variants[(now.YearDay()/14)%len(variants)] // rotate per fortnight
-			title, body := v.title, v.body
-			if s.ReferralRewardRupees > 0 {
-				body = fmt.Sprintf(
-					"Get ₹%d off your next bill for every friend who joins Vaha AI with your code. Open the app to share your link!",
-					s.ReferralRewardRupees)
+			dt, db := model.DefaultNotifTemplate("referral_promo")
+			vars := map[string]string{"reward": strconv.Itoa(s.ReferralRewardRupees)}
+			if s.ReferralRewardRupees <= 0 {
+				// No ₹ reward configured — use a generic default (admin templates
+				// with {reward} still apply as the admin wrote them).
+				db = "Share Vaha AI with your friends and earn rewards when they join. Open the app to get your referral link!"
 			}
-			if err := push.Enqueue(fcm.PushJob{Title: title, Body: body, Type: "referral_promo"}); err != nil {
-				return "", err
+			if !notifs.Send(nil, "referral_promo", vars, dt, db) {
+				return "referral promo disabled by admin — skipped", nil
 			}
 			return "queued referral promo to all customers", nil
 		},
@@ -180,32 +173,24 @@ func ReferralPromoJob(settings *repository.SettingRepository, notifs *repository
 
 // LowCreditsJob nudges paid students whose balance has hit 0 to buy a credit
 // top-up. De-duped so a student isn't reminded more than once every 3 days.
-func LowCreditsJob(students *repository.StudentRepository, notifs *repository.NotificationRepository, push *fcm.Publisher) Job {
+func LowCreditsJob(students *repository.StudentRepository, notifRepo *repository.NotificationRepository, notifs *service.NotificationService) Job {
 	return Job{
 		Key:      "low_credits",
 		Schedule: "daily@10",
 		Run: func(now time.Time) (string, error) {
-			if !push.Enabled() {
-				return "FCM not configured (0 sent)", nil
-			}
 			list, err := students.PaidLowCredits(0)
 			if err != nil {
 				return "", err
 			}
+			dt, db := model.DefaultNotifTemplate("credit_low")
 			sent := 0
 			for _, st := range list {
-				if notifs != nil {
-					if n, _ := notifs.CountRecentByType(st.ID, "credit_low", now.AddDate(0, 0, -3)); n > 0 {
+				if notifRepo != nil {
+					if n, _ := notifRepo.CountRecentByType(st.ID, "credit_low", now.AddDate(0, 0, -3)); n > 0 {
 						continue
 					}
 				}
-				err := push.Enqueue(fcm.PushJob{
-					Title:      "You're out of credits ⚡",
-					Body:       "Top up to keep using the AI tutor — open the app and buy credits.",
-					StudentIDs: []uint{st.ID},
-					Type:       "credit_low",
-				})
-				if err == nil {
+				if notifs.Send([]uint{st.ID}, "credit_low", nil, dt, db) {
 					sent++
 				}
 			}
@@ -216,36 +201,29 @@ func LowCreditsJob(students *repository.StudentRepository, notifs *repository.No
 
 // RenewalReminderJob reminds paid students on AutoPay that their plan renews in
 // the next few days. De-duped to once per cycle.
-func RenewalReminderJob(students *repository.StudentRepository, notifs *repository.NotificationRepository, push *fcm.Publisher) Job {
+func RenewalReminderJob(students *repository.StudentRepository, notifRepo *repository.NotificationRepository, notifs *service.NotificationService) Job {
 	return Job{
 		Key:      "renewal_reminder",
 		Schedule: "daily@9",
 		Run: func(now time.Time) (string, error) {
-			if !push.Enabled() {
-				return "FCM not configured (0 sent)", nil
-			}
 			list, err := students.RenewingWithin(now, 3)
 			if err != nil {
 				return "", err
 			}
+			dt, db := model.DefaultNotifTemplate("renewal_reminder")
 			sent := 0
 			for _, st := range list {
 				if st.NextChargeAt == nil {
 					continue
 				}
-				if notifs != nil {
-					if n, _ := notifs.CountRecentByType(st.ID, "renewal_reminder", now.AddDate(0, 0, -5)); n > 0 {
+				if notifRepo != nil {
+					if n, _ := notifRepo.CountRecentByType(st.ID, "renewal_reminder", now.AddDate(0, 0, -5)); n > 0 {
 						continue
 					}
 				}
 				date := st.NextChargeAt.Format("2 Jan")
-				err := push.Enqueue(fcm.PushJob{
-					Title:      "Your plan renews soon 🔄",
-					Body:       fmt.Sprintf("Your Vaha AI plan renews on %s. Make sure your UPI AutoPay is active to avoid interruption.", date),
-					StudentIDs: []uint{st.ID},
-					Type:       "renewal_reminder",
-				})
-				if err == nil {
+				if notifs.Send([]uint{st.ID}, "renewal_reminder",
+					map[string]string{"date": date}, dt, db) {
 					sent++
 				}
 			}
