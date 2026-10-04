@@ -139,6 +139,10 @@ type Setting struct {
 	AIEnabled       bool   `gorm:"not null;default:false" json:"ai_enabled"`
 	AnthropicAPIKey string `gorm:"size:255" json:"-"`
 	AnthropicModel  string `gorm:"size:60" json:"anthropic_model"` // e.g. claude-sonnet-5
+	// AnthropicWorkspaceID is sent as the anthropic-workspace-id header (needed
+	// for account-level keys not scoped to a workspace). Safe to expose — it's an
+	// identifier, not a secret.
+	AnthropicWorkspaceID string `gorm:"size:80" json:"anthropic_workspace_id"`
 	// Answers provider: "claude" (default) or "gemini" — who generates tutor
 	// answers. The Gemini key is write-only like the other provider keys.
 	AnswersProvider string `gorm:"size:20" json:"answers_provider"`

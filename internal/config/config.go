@@ -56,6 +56,10 @@ type UploadsConfig struct {
 type AIConfig struct {
 	AnthropicKey   string
 	AnthropicModel string // e.g. claude-sonnet-5
+	// AnthropicWorkspaceID is sent as the `anthropic-workspace-id` header when
+	// set. Required for account-level API keys that aren't scoped to a single
+	// workspace; blank for workspace-scoped keys.
+	AnthropicWorkspaceID string
 	// AnswersProvider selects who generates tutor answers: "claude" (default)
 	// or "gemini" (Google, much cheaper per call). Embeddings stay separate.
 	AnswersProvider string
@@ -221,8 +225,9 @@ func Load() Config {
 			FromName: env("SMTP_FROM_NAME", "Vaha AI"),
 		},
 		AI: AIConfig{
-			AnthropicKey:    env("ANTHROPIC_API_KEY", ""),
-			AnthropicModel:  env("ANTHROPIC_MODEL", "claude-sonnet-5"),
+			AnthropicKey:         env("ANTHROPIC_API_KEY", ""),
+			AnthropicModel:       env("ANTHROPIC_MODEL", "claude-sonnet-5"),
+			AnthropicWorkspaceID: env("ANTHROPIC_WORKSPACE_ID", ""),
 			AnswersProvider: env("AI_ANSWERS_PROVIDER", "claude"),
 			GeminiKey:       env("GEMINI_API_KEY", ""),
 			GeminiModel:     env("GEMINI_MODEL", "gemini-3.5-flash-lite"),

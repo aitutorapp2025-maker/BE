@@ -125,6 +125,9 @@ func (c *Chat) CompleteStream(ctx context.Context, system, user string, onDelta 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", cfg.AnthropicKey)
 	req.Header.Set("anthropic-version", anthropicVersion)
+	if cfg.AnthropicWorkspaceID != "" {
+		req.Header.Set("anthropic-workspace-id", cfg.AnthropicWorkspaceID)
+	}
 	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := c.client.Do(req)
@@ -250,6 +253,9 @@ func (c *Chat) send(ctx context.Context, system string, messages []anthropicMess
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", cfg.AnthropicKey)
 	req.Header.Set("anthropic-version", anthropicVersion)
+	if cfg.AnthropicWorkspaceID != "" {
+		req.Header.Set("anthropic-workspace-id", cfg.AnthropicWorkspaceID)
+	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {

@@ -124,8 +124,9 @@ type settingRequest struct {
 
 	// AI tutor. Keys are write-only: empty means "keep the existing one".
 	AIEnabled       bool   `json:"ai_enabled"`
-	AnthropicAPIKey string `json:"anthropic_api_key"`
-	AnthropicModel  string `json:"anthropic_model"`
+	AnthropicAPIKey      string `json:"anthropic_api_key"`
+	AnthropicModel       string `json:"anthropic_model"`
+	AnthropicWorkspaceID string `json:"anthropic_workspace_id"`
 	AnswersProvider string `json:"answers_provider"` // claude | gemini
 	GeminiAPIKey    string `json:"gemini_api_key"`
 	GeminiModel     string `json:"gemini_model"`
@@ -420,6 +421,8 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	if m := strings.TrimSpace(req.AnthropicModel); m != "" {
 		s.AnthropicModel = m
 	}
+	// Workspace id is an identifier, not a secret — set/clear it directly.
+	s.AnthropicWorkspaceID = strings.TrimSpace(req.AnthropicWorkspaceID)
 	if p := strings.TrimSpace(req.AnswersProvider); p == "claude" || p == "gemini" {
 		s.AnswersProvider = p
 	}
